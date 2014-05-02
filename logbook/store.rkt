@@ -33,7 +33,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(struct logbook (db) #:transparent)
+(struct logbook (db verbose?) #:transparent)
 (struct logbook-entry (book id project name type created-time) #:transparent)
 (struct logbook-table (book id entry name type column-spec created-time) #:transparent)
 (struct logbook-datum (book id table label data created-time) #:transparent)
@@ -67,13 +67,14 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (default-logbook)
+(define (default-logbook #:verbose? [verbose? #f])
   (open-logbook (or (getenv "RACKET_LOGBOOK")
 		    (error 'default-logbook "Environment variable RACKET_LOGBOOK not defined")
-		    )))
+		    )
+		#:verbose? verbose?))
 
-(define (open-logbook db-path)
-  (define book (logbook (sql:open db-path)))
+(define (open-logbook db-path #:verbose? [verbose? #f])
+  (define book (logbook (sql:open db-path) verbose?))
   (initialize! book)
   book)
 
@@ -124,6 +125,9 @@
 		     name
 		     type)
     ['()
+     (when (logbook-verbose? book)
+       (printf "~a: Creating logbook entry ~a\n" project name)
+       (flush-output))
      (define stamp (current-seconds))
      (define id
        (sql:insert (logbook-db book)
@@ -159,6 +163,12 @@
 		     type
 		     column-spec-str)
     ['()
+     (when (logbook-verbose? book)
+       (printf "~a/~a: Creating logbook table ~a\n"
+	       (logbook-entry-project entry)
+	       (logbook-entry-name entry)
+	       name)
+       (flush-output))
      (define stamp (current-seconds))
      (define id
        (sql:insert (logbook-db book)
@@ -208,7 +218,7 @@
 		   (and column-spec (written-bytes->value column-spec))
 		   stamp)))
 
-(define (raw-logbook-datum! table data #:label [label ""])
+(define (raw-logbook-datum!* table data label)
   (define book (logbook-table-book table))
   (define stamp (current-seconds))
   (define id
@@ -220,8 +230,22 @@
 		stamp))
   (logbook-datum book id table label data stamp))
 
+(define (echo-datum table data label)
+  (printf "~a/~a/~a:~a:~v\n"
+	  (logbook-entry-project (logbook-table-entry table))
+	  (logbook-entry-name (logbook-table-entry table))
+	  (logbook-table-name table)
+	  label
+	  data)
+  (flush-output))
+
+(define (raw-logbook-datum! table data #:label [label ""])
+  (when (logbook-verbose? (logbook-table-book table)) (echo-datum table data label))
+  (raw-logbook-datum!* table data label))
+
 (define (write-logbook-datum! table data #:label [label ""])
-  (raw-logbook-datum! table (value->written-bytes data) #:label label))
+  (when (logbook-verbose? (logbook-table-book table)) (echo-datum table data label))
+  (raw-logbook-datum!* table (value->written-bytes data) label))
 
 (define (raw-logbook-data table #:label [label #f])
   (define book (logbook-table-book table))
@@ -245,7 +269,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (module+ test
-  (define L (open-logbook ':memory:))
+  (define L (open-logbook ':memory: #:verbose? #t))
   (define E
     (begin (get-logbook-entry L "project1" "entry1" "etype1")
 	   (get-logbook-entry L "project1" "entry1" "etype1")))

@@ -24,12 +24,13 @@
      (write-logbook-datum! T #:label "vmstat" (capture-system "vmstat 2>&1"))]
     [(macosx)
      (write-logbook-datum! T #:label "vm_stat" (capture-system "vm_stat"))
-     (write-logbook-datum! T #:label "sysctl" (capture-system "sysctl -a"))]))
+     (write-logbook-datum! T #:label "sysctl" (capture-system "sysctl -a"))])
+  T)
 
 (module+ test
   (require racket/pretty)
   (require racket/list)
-  (define L (open-logbook ':memory:))
+  (define L (open-logbook ':memory: #:verbose? #t))
   (define E (logbook-entry L "p" "e" "t"))
   (logbook-record-machine-info! E)
   (for ((T (logbook-tables E)))
