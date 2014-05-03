@@ -57,7 +57,7 @@
     (row-handler r)))
 
 (define (do-dump-csv . args)
-  (apply do-dump* (lambda (r) (printf "~a\n" r)) args))
+  (apply do-dump* (lambda (r) (printf "~a\n" (values->csv-row r))) args))
 
 (define (do-dump-sexp . args)
   (apply do-dump* (lambda (r) (write r) (newline)) args))
