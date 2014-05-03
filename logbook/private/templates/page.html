@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>@xexpr->string[title]</title>
+    <link href='http://fonts.googleapis.com/css?family=Lora&amp;v1' rel='stylesheet' type='text/css'>
+    <link href='http://fonts.googleapis.com/css?family=Bree+Serif' rel='stylesheet' type='text/css'>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link rel="stylesheet" type="text/css" href="/style.css">
+    <script type="text/javascript" src="/logbook.js"></script>
+  </head>
+  <body>
+    <div id="page" class="@page-class">
+      <div class="content">
+	<div class="mainmenu">
+	  <ul>
+	    <li><a href="/">home</a></li>
+	    @in[n nav]{
+	    <li><a href="@(car n)">@xexpr->string[(cadr n)]</a></li>
+	    }
+	  </ul>
+	</div>
+	<div class="clear"></div>
+
+	<h1>@xexpr->string[title]</h1>
+
+	@xexpr->string[content]
+      </div>
+      <div class="clear"></div>
+      <div id="footer">
+      </div>
+    </div>
+  </body>
+</html>

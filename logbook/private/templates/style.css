@@ -1,0 +1,349 @@
+* {
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background: #eee;
+}
+
+body, th, td, input, textarea {
+	font-family: @textfonts;
+	font-size: 10pt;
+	color: @color1;
+}
+
+h1, h2, h3, h4, h5, h6 {
+	font-family: @headerfonts;
+}
+
+#page.frontpage h1 {
+	font-size: 56pt;
+}
+
+h1, h2, h3 {
+	margin-top: 0.5em;
+	color: @color2;
+	font-weight: normal;
+}
+
+h1 a, h2 a, h3 a {
+	color: @color2;
+}
+
+h1 {
+	font-size: 3em;
+}
+
+h2 {
+	font-size: 1.5em;
+}
+
+h3 {
+	font-size: 1.1em;
+}
+
+p, ul, ol {
+	margin-top: 1em;
+	line-height: 1.3em;
+	font-size: 1.1em;
+}
+
+ul ul {
+	margin-top: 0.5em;
+	font-size: 1em;
+}
+
+ul p {
+	font-size: 1em;
+}
+
+ul, ol {
+	margin-bottom: 0.5em;
+	margin-left: 3em;
+}
+
+blockquote {
+	margin-left: 3em;
+	margin-right: 3em;
+}
+
+a {
+	text-decoration: none;
+	color: @linkcolor;
+}
+
+hr {
+	display: none;
+}
+
+#page {
+	max-width: 800px;
+	margin: 0 auto;
+	background: #FFFFFF;
+	padding: 1em;
+}
+
+#header {
+	padding-bottom: 2px;
+	border-bottom: solid @color1 1px;
+}
+
+#header h2 {
+	float: right;
+}
+
+#header a {
+	font-variant: small-caps;
+}
+
+.historylinks {
+	text-align: center;
+}
+
+.historylinks.bottom {
+	margin-top: 10px;
+}
+
+.footnotes {
+	border-top: dashed @color1 1px;
+	font-size: 0.8em;
+	margin-top: 2em;
+}
+
+.content {
+	margin: 0;
+	margin-left: 30px;
+	padding-top: 0;
+	padding-right: 15px;
+	padding-left: 15px;
+	padding-bottom: 15px;
+	min-height: 400px;
+}
+
+.content h1 {
+	margin: 0;
+	padding-top: 10px;
+	padding-bottom: 5px;
+	text-align: left;
+	font-size: 24pt;
+}
+
+.content h1,
+.content h2,
+.content h3 {
+	margin-left: -30px;
+}
+
+.content .entry_footer {
+	text-align: right;
+}
+
+.sidebar {
+	float: left;
+	width: 150px;
+	padding-top: 30px;
+	padding-right: 10px;
+	padding-bottom: 0px;
+	padding-left: 10px;
+	text-align: left;
+
+	border-left: solid #A5A5AF 1px;
+	margin-left: -1px;
+}
+
+.sidebar ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-size: 1.5em;
+	color: @color2;
+}
+
+.sidebar li {
+	padding-bottom: 0.5em;
+}
+
+.sidebar li ul {
+	padding-top: 0.5em;
+	padding-left: 10px;
+	font-size: 0.7em;
+}
+
+.sidebar li li {
+}
+
+.sidebar li a { color: @linkcolor; }
+.sidebar li li a { color: @color2; }
+
+.sidebar a:hover {
+}
+
+.clear { clear: both; }
+.clearright { clear: right; }
+
+#footer {
+	background: #FFFFFF;
+	padding-top: 0.5em;
+	margin-bottom: 1em;
+}
+
+#footer p {
+	text-align: center;
+	font-size: 8pt;
+	color: @color2;
+}
+
+div.sitemap_subcategory {
+	margin-left: 2em;
+}
+
+.sitemap_categorylink {
+	font-size: 1.1em;
+}
+
+.center {
+	text-align: center;
+}
+
+.pinkborder {
+	border: solid @color2 1px;
+	padding: 8px;
+}
+
+img.sitelogo {
+    float: left;
+    margin: 15px;
+}
+
+.rightfloat, .leftfloat {
+	margin: 0.3em;
+}
+
+a img {
+	border: 0;
+}
+
+.cornerpic {
+	float: right;
+	width: 250px;
+	padding: 1em;
+	padding-right: 0;
+	margin: 0;
+}
+
+.imagecenter {
+	text-align: center;
+	margin: 0.3em;
+}
+
+.leftfloat {
+	float: left;
+	margin-left: 0px;
+	margin-right: 1em;
+}
+.rightfloat {
+	float: right;
+	margin-left: 1em;
+	margin-right: 0px;
+}
+
+.topspace {
+	margin-top: 2em;
+}
+
+table {
+	margin-top: 1em;
+	margin-bottom: 1em;
+	border-collapse: collapse;
+}
+
+tr.ruled th, tr:last-child td {
+	border-bottom: solid @color2 1px;
+}
+
+th, td {
+	padding: 0.2em;
+}
+
+.xrotate {
+    -webkit-transform: rotate(-90deg);
+    -moz-transform: rotate(-90deg);
+    -ms-transform: rotate(-90deg);
+    -o-transform: rotate(-90deg);
+    filter: progid:DXImageTransform.Microsoft.BasicImage(rotation=3);
+
+    -webkit-transform-origin: 50% 50%;
+    -moz-transform-origin: 50% 50%;
+    -ms-transform-origin: 50% 50%;
+    -o-transform-origin: 50% 50%;
+    transform-origin: 50% 50%;
+}
+
+th {
+	font-weight: normal;
+	color: @color2;
+	text-align: left;
+	vertical-align: top;
+}
+
+td {
+	text-align: left;
+	vertical-align: top;
+	border-left: solid @color2 1px;
+}
+
+td:first-child {
+	border-left: none;
+}
+
+.mainmenu {
+    margin: 0px;
+}
+
+#page.frontpage .mainmenu {
+}
+
+#page.default .mainmenu {
+}
+
+.mainmenu ul {
+    margin-top: 0;
+}
+
+.mainmenu ul li {
+	display: inline;
+	float: right;
+	text-align: center;
+	margin-left: 0.5em;
+	margin-right: 0.5em;
+}
+
+pre {
+	padding: 0.5em;
+	margin-top: 0.5em;
+	background-color: #eeeeee;
+	color: black;
+	overflow: auto;
+}
+
+sup {
+	line-height: 0;
+}
+
+.display-none {
+    display: none;
+}
+
+/*---------------------------------------------------------------------------*/
+
+.latest-entry {
+    display: block;
+    background: @linkcolor;
+    color: #FFFFFF;
+    border: solid @linkcolor 1px;
+    padding: 1em;
+    text-align: center;
+    font-family: @headerfonts;
+    font-size: 3em;
+}

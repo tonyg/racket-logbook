@@ -1,5 +1,6 @@
 #lang racket/base
 
+(require racket/set)
 (require racket/match)
 (require racket/cmdline)
 (require raco/command-name)
@@ -15,6 +16,9 @@
 (define (do-plot . args)
   (define real-do-plot (dynamic-require 'logbook/private/raco-logbook-plot 'do-plot))
   (apply real-do-plot args))
+
+(define (do-serve . args)
+  (apply (dynamic-require 'logbook/private/raco-logbook-serve 'serve-logbook) args))
 
 (define (do-load-csv L project entry entry-type table table-type column-names)
   (define rows (csv->list (current-input-port)))
@@ -94,6 +98,29 @@
   (for ((E (logbook-entry L project entry entry-type #:create? #f)))
     (for ((T (logbook-tables E #:type table-type)))
       (list-table E T))))
+
+(define (list-prefs L)
+  (define seen (set))
+  (for ((D (list->set (logbook-prefs/detail L #f))))
+    (when (not (set-member? seen D))
+      (match-define (list project entry-type table-type table-name name value) D)
+      (printf "~a\t~a\t~a\t~a\t~a\t~a\n" project entry-type table-type table-name name value)
+      (set! seen (set-add seen D)))))
+
+(define (set-pref L project entry-type table-type table-name pref-name pref-value)
+  (set-logbook-pref! L project
+		     #:entry_type entry-type
+		     #:table_type table-type
+		     #:table_name table-name
+		     (string->symbol pref-name)
+		     (with-input-from-string pref-value read)))
+
+(define (delete-pref L project entry-type table-type table-name pref-name)
+  (delete-logbook-pref! L project
+			#:entry_type entry-type
+			#:table_type table-type
+			#:table_name table-name
+			(string->symbol pref-name)))
 
 (define (main)
   (define jobs '())
@@ -178,6 +205,19 @@
      ["--load-csv" project entry table
       "load csv into a table"
       (push-job! do-load-csv project entry entry-type table table-type column-names)]
+     ["--serve" port
+      "run webserver UI"
+      (push-job! do-serve (string->number port))]
+
+     ["--list-prefs"
+      "list all current pref settings"
+      (push-job! list-prefs)]
+     ["--set-pref" project entry-type table-type table-name pref-name pref-value
+      "set a preference"
+      (push-job! set-pref project entry-type table-type table-name pref-name pref-value)]
+     ["--delete-pref" project entry-type table-type table-name pref-name
+      "delete a preference"
+      (push-job! delete-pref project entry-type table-type table-name pref-name)]
      ))
   (define L (open-logbook (or logbook-name (default-logbook-name))))
   (for ((j jobs)) (j L))
