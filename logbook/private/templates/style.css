@@ -15,6 +15,7 @@ body, th, td, input, textarea {
 
 h1, h2, h3, h4, h5, h6 {
 	font-family: @headerfonts;
+	padding-top: 0.5em;
 }
 
 #page.frontpage h1 {
@@ -81,7 +82,7 @@ hr {
 	max-width: 800px;
 	margin: 0 auto;
 	background: #FFFFFF;
-	padding: 1em;
+	padding: 0 1em;
 }
 
 #header {
@@ -308,7 +309,8 @@ td:first-child {
 }
 
 .mainmenu ul {
-    margin-top: 0;
+    margin-top: 0.66em;
+    padding-top: 0.34em;
 }
 
 .mainmenu ul li {
@@ -337,13 +339,30 @@ sup {
 
 /*---------------------------------------------------------------------------*/
 
-.latest-entry {
-    display: block;
-    background: @linkcolor;
-    color: #FFFFFF;
-    border: solid @linkcolor 1px;
-    padding: 1em;
-    text-align: center;
-    font-family: @headerfonts;
-    font-size: 3em;
+div.link-buttons-container {
+    padding-bottom: 1em;
+}
+
+ul.link-buttons {
+	margin: 0;
+	padding: 0;
+}
+
+ul.link-buttons li {
+	display: inline;
+	float: left;
+	text-align: center;
+	margin: 0;
+	margin-top: 1em;
+	padding: 0;
+}
+
+ul.link-buttons li a {
+	background: @linkcolor;
+	color: #FFFFFF;
+	border: solid @linkcolor 1px;
+	text-align: center;
+	font-family: @headerfonts;
+	margin-right: 0.5em;
+	padding: 0.33em 0.5em;
 }

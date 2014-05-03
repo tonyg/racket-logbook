@@ -1,5 +1,6 @@
 #lang racket/base
 
+(require (only-in unstable/list group-by))
 (require racket/match)
 (require racket/date)
 (require racket/runtime-path)
@@ -25,13 +26,33 @@
 (define plot-image-width 700)
 (define plot-image-height 450)
 
+;; Holy fuck this is stupid.
+;; https://groups.google.com/d/msg/racket-users/-yVo3542Bew/6DzplG6UA4EJ
+(define-namespace-anchor dynamic-template-anchor)
+(define (dynamic-template* name bindings)
+  (define p (path->string (build-path template-root name)))
+  (define form #`(lambda (#,@(map car bindings)) (include-template (file #,p))))
+  (apply (eval form (namespace-anchor->namespace dynamic-template-anchor))
+	 (map cadr bindings)))
+
+(define-syntax-rule (dynamic-template name (var val) ...)
+  (dynamic-template* name `((var ,val) ...)))
+
+(define-syntax-rule (static-template name (var val) ...)
+  (let ((var val) ...)
+    (include-template name)))
+
 (define (page title
 	      content
 	      #:nav [nav '()]
 	      #:page-class [page-class "default"])
   (response/output
    (lambda (p)
-     (display (include-template "templates/page.html") p))))
+     (display (static-template "templates/page.html"
+			       (title title)
+			       (page-class page-class)
+			       (nav nav)
+			       (content content)) p))))
 
 (define (value->string v)
   (call-with-output-string (lambda (p) (display v p))))
@@ -49,21 +70,8 @@
 (define (pretty-time t)
   (date->string (seconds->date t) #t))
 
-;; Holy fuck this is stupid.
-;; https://groups.google.com/d/msg/racket-users/-yVo3542Bew/6DzplG6UA4EJ
-(define-namespace-anchor dynamic-template-anchor)
-(define (dynamic-template* name bindings)
-  (define p (path->string (build-path template-root name)))
-  (define form #`(lambda (#,@(map car bindings)) (include-template (file #,p))))
-  (apply (eval form (namespace-anchor->namespace dynamic-template-anchor))
-	 (map cadr bindings)))
-
-(define-syntax-rule (dynamic-template name (var val) ...)
-  (dynamic-template* name `((var ,val) ...)))
-
-(define-syntax-rule (static-template name (var val) ...)
-  (let ((var val) ...)
-    (include-template name)))
+(define (pretty-entry-type t)
+  (if (string=? t "") "(blank)" t))
 
 (define (serve-style req)
   (response/output
@@ -77,17 +85,26 @@
 			       (headerfonts "'Bree Serif', Georgia"))
 	      p))))
 
+(define (link-buttons xexprs)
+  `(div ((class "link-buttons-container"))
+	(ul ((class "link-buttons"))
+	    ,@(for/list [(x xexprs)]
+		`(li ,x)))
+	(div ((class "clear")))))
+
 (define (serve-logbook L port)
   (define-values (logbook-dispatch logbook-url)
     (dispatch-rules
      [("") list-projects]
      [("style.css") serve-style]
-     [("log" (string-arg)) list-entries]
-     [("log" (string-arg) (string-arg)) list-tables]
-     [("log" (string-arg) (string-arg) (string-arg)) show-table]
-     [("log" (string-arg) (string-arg) (string-arg)
-       "plot" (integer-arg) (integer-arg) (integer-arg) ...) plot-table]
-     [("log" (string-arg) (string-arg) (string-arg) "defaultplot") default-plot-table]))
+     [("log" (string-arg)) project-page]
+     [("log" (string-arg) (string-arg)) entry-type-page]
+     [("log" (string-arg) (string-arg) (string-arg)) entry-page]
+     [("log" (string-arg) (string-arg) (string-arg) (string-arg)) table-page]
+     [("log" (string-arg) (string-arg) (string-arg) (string-arg)
+       "plot" (integer-arg) (integer-arg) (integer-arg) ...) render-table-image]
+     [("log" (string-arg) (string-arg) (string-arg) (string-arg)
+       "defaultplot") default-render-table-image]))
 
   (define (list-projects req)
     (page "All Projects"
@@ -97,27 +114,63 @@
 		 (th "Project name")))
 	    (tbody
 	     ,@(for/list [(p (logbook-projects L))]
-		 `(tr (td (a ((href ,(logbook-url list-entries p))) ,p))))))
+		 `(tr (td (a ((href ,(logbook-url project-page p))) ,p))))))
 	  ))
 
-  (define (list-entries req project)
+  (define (project-page req project)
+    (define Es (logbook-entries L #:project project))
+    (define grouped-Es (group-by logbook-entry-type Es))
     (page (format "Project ~a" project)
 	  `(div
-	    (a ((class "latest-entry")
-		(href ,(logbook-url list-tables project "--latest--")))
-	       "Latest entry")
+	    (h2 "Latest entries by entry-type")
+	    ,(link-buttons
+	      (for/list [(group grouped-Es)]
+		(define an-E (car group)) ;; we know the group is nonempty
+		(define entry-type (logbook-entry-type an-E))
+		`(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
+		    ,(pretty-entry-type entry-type))))
+	    (h2 "All entries by entry-type")
+	    ,@(for/list [(group grouped-Es)]
+		(define an-E (car group)) ;; we know the group is nonempty
+		(define entry-type (logbook-entry-type an-E))
+		`(div
+		  (h3 ,(pretty-entry-type entry-type))
+		  ,(link-buttons
+		    `((a ((href ,(logbook-url entry-type-page project entry-type)))
+			 "Summary page")
+		      (a ((href ,(logbook-url entry-page project entry-type "--latest--")))
+			 "Latest entry")))
+		  (table
+		   (thead
+		    (tr ((class "ruled"))
+			(th "Entry name")
+			(th "Created")))
+		   (tbody
+		    ,@(for/list [(E group)]
+			(match-define (<logbook-entry> _ _ (== project) name type created-time) E)
+			`(tr (td (a ((href ,(logbook-url entry-page project type name)))
+				    ,name))
+			     (td ,(pretty-time created-time)))))))))
+	  ))
+
+  (define (entry-type-page req project entry-type)
+    (page (format "Entry type ~a" (pretty-entry-type entry-type))
+	  `(div
+	    ,(link-buttons
+	      `((a ((href ,(logbook-url project-page project)))
+		   ,(format "Project ~a" project))
+		(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
+		   "Latest entry")))
 	    (table
 	     (thead
 	      (tr ((class "ruled"))
 		  (th "Entry name")
-		  (th "Entry type")
 		  (th "Created")))
 	     (tbody
-	      ,@(for/list [(E (logbook-entries L #:project project))]
+	      ,@(for/list [(E (logbook-entries L #:project project #:type entry-type))]
 		  (match-define (<logbook-entry> _ _ (== project) name type created-time) E)
-		  `(tr (td (a ((href ,(logbook-url list-tables project name)))
+		  `(tr (td (a ((href ,(logbook-url entry-page project type name)))
 			      ,name))
-		       (td ,type)
 		       (td ,(pretty-time created-time)))))))
 	  ))
 
@@ -172,8 +225,9 @@
 					  (value ,(number->string i))))))))
 		   '())
 	     ,@(if cols
-		   `((script ,(format "install_callbacks('~a','~a','~a',~a);\n"
+		   `((script ,(format "install_callbacks('~a','~a','~a','~a',~a);\n"
 				      project
+				      entry-type
 				      entry0
 				      name
 				      (length cols))))
@@ -186,58 +240,71 @@
 			    (for/list [(c data)] `(td ,(value->xexpr c)))
 			    (list `(td ,(value->xexpr data))))))))))
 
-  (define (lookup-entry project name)
+  (define (lookup-entry project name entry-type)
     (if (equal? name "--latest--")
-	(latest-logbook-entry L project)
-	(logbook-entry L project name #:create? #f)))
+	(latest-logbook-entry L project #:type entry-type)
+	(logbook-entry L project name entry-type #:create? #f)))
 
-  (define (list-tables req project entry0)
-    (define E (lookup-entry project entry0))
+  (define (entry-page req project entry-type entry0)
+    (define E (lookup-entry project entry0 entry-type))
     (define entry (logbook-entry-name E))
-    (page (format "~a/~a" project entry)
+    (page (format "~a" entry)
 	  `(div
+	    ,(link-buttons
+	      `((a ((href ,(logbook-url project-page project)))
+		   ,(format "Project ~a" project))
+		(a ((href ,(logbook-url entry-type-page project entry-type)))
+		   ,(format "Type ~a" (pretty-entry-type entry-type)))
+		(a ((href ,(logbook-url entry-page project entry-type entry)))
+		   "Permalink")))
 	    ,@(for/list [(T (logbook-tables E))]
 		(match-define (<logbook-table> _ _ _ name type cols created-time) T)
 		`(div
 		  (h2 ((class "table-name"))
-		      (a ((href ,(logbook-url show-table project entry0 name))) ,name))
+		      (a ((href ,(logbook-url table-page project entry-type entry0 name))) ,name))
 		  (h3 ((class "table-type")) ,type)
 		  (h3 ((class "table-created-time")) ,(pretty-time created-time))
 		  ,(format-table entry0 T))))
-	  #:nav (list (list (logbook-url list-entries project) project)
-		      (list (logbook-url list-tables project "--latest--") "latest entry"))))
+	  #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
+			    "latest entry of this type"))))
 
-  (define (show-table req project entry0 table)
-    (define E (lookup-entry project entry0))
+  (define (table-page req project entry-type entry0 table)
+    (define E (lookup-entry project entry0 entry-type))
     (define entry (logbook-entry-name E))
     (define T (logbook-table E table #:create? #f))
     (match-define (<logbook-table> _ _ _ name type cols created-time) T)
-    (page (format "~a/~a/~a" project entry table)
+    (page (format "~a" table)
 	  `(div
+	    ,(link-buttons
+	      `((a ((href ,(logbook-url project-page project)))
+		   ,(format "Project ~a" project))
+		(a ((href ,(logbook-url entry-page project entry-type entry)))
+		   ,(format "Entry ~a" entry))
+		(a ((href ,(logbook-url table-page project entry-type entry table)))
+		   "Permalink")))
 	    (h2 ((class "table-type")) ,type)
 	    (h2 ((class "table-created-time")) ,(pretty-time created-time))
 	    ,(format-table entry0 T))
-	  #:nav (list (list (logbook-url list-entries project) project)
-		      (list (logbook-url list-tables project "--latest--") "latest entry")
-		      (list (logbook-url list-tables project entry) entry)
-		      (list (logbook-url show-table project "--latest--" table)
-			    (format "latest ~a" table)))))
+	  #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
+			    "latest entry of this type")
+		      (list (logbook-url table-page project entry-type "--latest--" table)
+			    (format "latest ~a table" table)))))
 
-  (define (default-plot-table req project entry0 table)
-    (define E (lookup-entry project entry0))
+  (define (default-render-table-image req project entry-type entry0 table)
+    (define E (lookup-entry project entry0 entry-type))
     (define entry (logbook-entry-name E))
     (define T (logbook-table E table #:create? #f))
     (match-define (list* xaxis yaxes) (default-plot-columns T))
-    (plot-table* E T xaxis yaxes))
+    (render-table-image* E T xaxis yaxes))
 
-  (define (plot-table req project entry0 table xaxis yaxis0 yaxesN)
-    (define E (lookup-entry project entry0))
+  (define (render-table-image req project entry-type entry0 table xaxis yaxis0 yaxesN)
+    (define E (lookup-entry project entry0 entry-type))
     (define entry (logbook-entry-name E))
     (define T (logbook-table E table #:create? #f))
     (define yaxes (cons yaxis0 yaxesN))
-    (plot-table* E T xaxis yaxes))
+    (render-table-image* E T xaxis yaxes))
 
-  (define (plot-table* E T xaxis yaxes)
+  (define (render-table-image* E T xaxis yaxes)
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]

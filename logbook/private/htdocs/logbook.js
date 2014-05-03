@@ -1,4 +1,4 @@
-function install_callbacks(projectname, entryname, tablename, controlcount) {
+function install_callbacks(projectname, entrytype, entryname, tablename, controlcount) {
     var formname = 'table-' + tablename;
     var f = document.forms[formname];
     var xs = [];
@@ -15,7 +15,7 @@ function install_callbacks(projectname, entryname, tablename, controlcount) {
 	if (yaxes.length) {
 	    img.className = '';
 	    img.src =
-		'/log/' + projectname + '/' + entryname + '/' + tablename +
+		'/log/' + projectname + '/' + entrytype + '/' + entryname + '/' + tablename +
 		'/plot/' + xaxis + '/' + yaxes.join('/');
 	} else {
 	    img.className = 'display-none';
