@@ -180,7 +180,8 @@
        (when (logbook-verbose? book)
 	 (printf "~a: Creating logbook entry ~a\n" project name)
 	 (flush-output))
-       (define stamp (or (inexact->exact (truncate override-stamp)) (current-seconds)))
+       (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
+			 (current-seconds)))
        (define id
 	 (sql:insert (logbook-db book)
 		     (string-append "insert into logbook_entry"
@@ -244,7 +245,8 @@
 		 name
 		 column-spec)
 	 (flush-output))
-       (define stamp (or (inexact->exact (truncate override-stamp)) (current-seconds)))
+       (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
+			 (current-seconds)))
        (define id
 	 (sql:insert (logbook-db book)
 		     (string-append "insert into logbook_table"
@@ -387,7 +389,8 @@
 
 (define (raw-logbook-datum!** table data label override-stamp)
   (define book (logbook-table-book table))
-  (define stamp (or (inexact->exact (truncate override-stamp)) (current-seconds)))
+  (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
+		    (current-seconds)))
   (define id
     (sql:insert (logbook-db book)
 		(string-append "insert into logbook_datum "
