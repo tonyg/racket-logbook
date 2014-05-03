@@ -30,19 +30,27 @@
 		  (latest-logbook-entry L project #:type entry-type)))
     (define T (logbook-table E table table-type #:create? #f))
     (define ps (logbook-table->points T #:columns plot-columns))
+    (define-values (x-label y-label)
+      (match (logbook-table-column-spec T)
+	[#f (values (plot-x-label) (plot-y-label))]
+	[ss (values ((@ (car plot-columns)) ss) ((@ (cadr plot-columns)) ss))]))
     (plot-new-window? #t)
     (match plot-output
       ['screen
        (plot (list (lines ps) (points ps))
+	     #:x-label x-label #:y-label y-label
 	     #:title (or plot-title (logbook-table-fullname T)))]
       ['stdout
        (plot-file (list (lines ps) (points ps)) (current-output-port)
+		  #:x-label x-label #:y-label y-label
 		  #:title (or plot-title (logbook-table-fullname T)))]
       ['default-file
-	(plot-file (list (lines ps) (points ps)) (table-filename T)
-		   #:title (or plot-title (logbook-table-fullname T)))]
+       (plot-file (list (lines ps) (points ps)) (table-filename T)
+		  #:x-label x-label #:y-label y-label
+		  #:title (or plot-title (logbook-table-fullname T)))]
       [(? string? filename)
        (plot-file (list (lines ps) (points ps)) filename
+		  #:x-label x-label #:y-label y-label
 		  #:title (or plot-title (logbook-table-fullname T)))])))
 
 ;; (module+ test
