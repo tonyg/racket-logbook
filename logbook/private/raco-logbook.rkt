@@ -107,8 +107,9 @@
   (define plot-size #f)
   (define font-size #f)
   (define column-names 'first-line)
-  (define (push-job! t)
-    (set! jobs (cons t jobs)))
+  (define-syntax-rule (push-job! f arg ...)
+    (let ((args (list arg ...)))
+      (set! jobs (cons (lambda (L) (apply f L args)) jobs))))
   (define positional-args
     (command-line
      #:program (short-program+command-name)
@@ -150,34 +151,33 @@
 
      ["--list-all-entries"
       "list all entries in the log book"
-      (push-job! (lambda (L) (list-entries L #f entry-type)))]
+      (push-job! list-entries #f entry-type)]
      ["--list-project-entries" project
       "list all entries against a given project"
-      (push-job! (lambda (L) (list-entries L project entry-type)))]
+      (push-job! list-entries project entry-type)]
      ["--list-all-tables"
       "list all tables in every entry in every project"
-      (push-job! (lambda (L) (list-all-tables L entry-type table-type)))]
+      (push-job! list-all-tables entry-type table-type)]
      ["--list-project-tables" project
       "list all tables in the named project's entries"
-      (push-job! (lambda (L) (list-project-tables L project entry-type table-type)))]
+      (push-job! list-project-tables project entry-type table-type)]
      ["--list-tables" project entry
       "list all tables in the named project entry"
-      (push-job! (lambda (L) (list-tables L project entry entry-type table-type)))]
+      (push-job! list-tables project entry entry-type table-type)]
      ["--plot" project table
       "produce a simple plot of the named table"
-      (push-job! (lambda (L)
-		   (do-plot L project entry-name entry-type table table-type
-			    plot-title plot-columns plot-output plot-size font-size)))]
+      (push-job! do-plot
+		 project entry-name entry-type table table-type
+		 plot-title plot-columns plot-output plot-size font-size)]
      ["--dump-csv" project table
       "produce a csv dump of the named table"
-      (push-job! (lambda (L) (do-dump-csv L project entry-name entry-type table table-type)))]
+      (push-job! do-dump-csv project entry-name entry-type table table-type)]
      ["--dump-sexp" project table
       "produce an s-expression dump of the named table"
-      (push-job! (lambda (L) (do-dump-sexp L project entry-name entry-type table table-type)))]
+      (push-job! do-dump-sexp project entry-name entry-type table table-type)]
      ["--load-csv" project entry table
       "load csv into a table"
-      (push-job! (lambda (L) (do-load-csv L project entry entry-type table table-type
-					  column-names)))]
+      (push-job! do-load-csv project entry entry-type table table-type column-names)]
      ))
   (define L (open-logbook (or logbook-name (default-logbook-name))))
   (for ((j jobs)) (j L))
