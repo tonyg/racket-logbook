@@ -1,5 +1,6 @@
 #lang racket/base
 
+(require racket/pretty)
 (require racket/set)
 (require racket/match)
 (require racket/cmdline)
@@ -10,6 +11,7 @@
 (require (planet neil/csv))
 
 (require "../main.rkt")
+(require "../export.rkt")
 
 (provide (all-defined-out))
 
@@ -122,6 +124,18 @@
 			#:table_name table-name
 			(string->symbol pref-name)))
 
+(define (do-export L project entry-type entry)
+  (for [(E (logbook-entries L #:project project #:name entry #:type entry-type))]
+    (pretty-write (export-entry E))
+    (newline)))
+
+(define (do-import L)
+  (let loop ()
+    (define X (read))
+    (when (not (eof-object? X))
+      (import-entry L X)
+      (loop))))
+
 (define (main)
   (define jobs '())
   (define logbook-name #f)
@@ -191,11 +205,13 @@
      ["--list-tables" project entry
       "list all tables in the named project entry"
       (push-job! list-tables project entry entry-type table-type)]
+
      ["--plot" project table
       "produce a simple plot of the named table"
       (push-job! do-plot
 		 project entry-name entry-type table table-type
 		 plot-title plot-columns plot-output plot-size font-size)]
+
      ["--dump-csv" project table
       "produce a csv dump of the named table"
       (push-job! do-dump-csv project entry-name entry-type table table-type)]
@@ -205,6 +221,23 @@
      ["--load-csv" project entry table
       "load csv into a table"
       (push-job! do-load-csv project entry entry-type table table-type column-names)]
+
+     ["--export-all"
+      "export all entries"
+      (push-job! do-export #f entry-type #f)]
+
+     ["--export-project" project
+      "export all entries in a project"
+      (push-job! do-export project entry-type #f)]
+
+     ["--export-entry" project entry
+      "export a single entry"
+      (push-job! do-export project entry-type entry)]
+
+     ["--import-entries"
+      "import entries from stdin"
+      (push-job! do-import)]
+
      ["--serve" port
       "run webserver UI"
       (push-job! do-serve (string->number port))]

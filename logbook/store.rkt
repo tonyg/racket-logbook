@@ -162,7 +162,9 @@
     (match-define (vector project) r)
     project))
 
-(define (get-logbook-entry book project name [type #f] #:create? [create? #t])
+(define (get-logbook-entry book project name [type #f]
+			   #:create? [create? #t]
+			   #:created-time [override-stamp #f])
   (match (simple-query (logbook-db book)
 		       "logbook_entry"
 		       '("id" "entry_type" "created_time")
@@ -178,7 +180,7 @@
        (when (logbook-verbose? book)
 	 (printf "~a: Creating logbook entry ~a\n" project name)
 	 (flush-output))
-       (define stamp (current-seconds))
+       (define stamp (or (inexact->exact (truncate override-stamp)) (current-seconds)))
        (define id
 	 (sql:insert (logbook-db book)
 		     (string-append "insert into logbook_entry"
@@ -218,7 +220,8 @@
 
 (define (get-logbook-table entry name [type #f]
 			   #:column-spec [column-spec #f]
-			   #:create? [create? #t])
+			   #:create? [create? #t]
+			   #:created-time [override-stamp #f])
   (define column-spec-str (and column-spec
 			       (value->written-bytes column-spec)))
   (define book (logbook-entry-book entry))
@@ -241,7 +244,7 @@
 		 name
 		 column-spec)
 	 (flush-output))
-       (define stamp (current-seconds))
+       (define stamp (or (inexact->exact (truncate override-stamp)) (current-seconds)))
        (define id
 	 (sql:insert (logbook-db book)
 		     (string-append "insert into logbook_table"
@@ -382,17 +385,34 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (raw-logbook-datum!* table data label)
+(define (raw-logbook-datum!** table data label override-stamp)
   (define book (logbook-table-book table))
-  (define stamp (current-seconds))
+  (define stamp (or (inexact->exact (truncate override-stamp)) (current-seconds)))
   (define id
     (sql:insert (logbook-db book)
-		"insert into logbook_datum (table_id,label,data,created_time) values (?,?,?,?)"
+		(string-append "insert into logbook_datum "
+			       "(table_id,label,data,created_time) values (?,?,?,?)")
 		(logbook-table-id table)
 		label
 		data
 		stamp))
   (logbook-datum book id table label data stamp))
+
+(define (raw-logbook-datum!* table data label override-stamp0)
+  (define override-stamp (and override-stamp0 (inexact->exact (truncate override-stamp0))))
+  (define book (logbook-table-book table))
+  (if override-stamp
+      (match (simple-query (logbook-db book)
+			   "logbook_datum"
+			   '("id")
+			   (list "table_id" (logbook-table-id table))
+			   (list "label" label)
+			   (list "data" data)
+			   (list "created_time" override-stamp))
+	['() (raw-logbook-datum!** table data label override-stamp)]
+	[(list (vector id))
+	 (logbook-datum book id table label data override-stamp)])
+      (raw-logbook-datum!** table data label override-stamp)))
 
 (define (logbook-table-fullname table)
   (format "~a/~a"
@@ -406,13 +426,13 @@
 	  data)
   (flush-output))
 
-(define (raw-logbook-datum! table data #:label [label ""])
+(define (raw-logbook-datum! table data #:label [label ""] #:created-time [override-stamp #f])
   (when (logbook-verbose? (logbook-table-book table)) (echo-datum table data label))
-  (raw-logbook-datum!* table data label))
+  (raw-logbook-datum!* table data label override-stamp))
 
 (define (write-logbook-datum! table data #:label [label ""])
   (when (logbook-verbose? (logbook-table-book table)) (echo-datum table data label))
-  (raw-logbook-datum!* table (value->written-bytes data) label))
+  (raw-logbook-datum!* table (value->written-bytes data) label #f))
 
 (define (raw-logbook-data table #:label [label #f])
   (define book (logbook-table-book table))
