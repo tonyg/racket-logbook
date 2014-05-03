@@ -30,6 +30,8 @@
 	 logbook-entries
 	 logbook-tables
 
+	 delete-logbook-entry!
+
 	 logbook-prefs
 	 logbook-prefs/detail
 	 set-logbook-pref!
@@ -297,6 +299,15 @@
 		   type
 		   (and column-spec (written-bytes->value column-spec))
 		   stamp)))
+
+(define (delete-logbook-entry! entry)
+  (define book (logbook-entry-book entry))
+  (define Ts (logbook-tables entry))
+  (for [(T Ts)]
+    ((do-sql book) "delete from logbook_datum where table_id = ?" (logbook-table-id T))
+    ((do-sql book) "delete from logbook_table where id = ?" (logbook-table-id T)))
+  ((do-sql book) "delete from logbook_entry where id = ?" (logbook-entry-id entry))
+  (void))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

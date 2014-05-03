@@ -37,3 +37,9 @@ function install_callbacks(projectname, entrytype, entryname, tablename, control
     }
     refresh_plot();
 }
+
+function update_confirm_button_status() {
+    var box = document.getElementById("confirm_checkbox");
+    var button = document.getElementById("confirm_button");
+    button.disabled = !box.checked;
+}

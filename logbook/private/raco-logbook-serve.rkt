@@ -100,6 +100,7 @@
      [("log" (string-arg)) project-page]
      [("log" (string-arg) (string-arg)) entry-type-page]
      [("log" (string-arg) (string-arg) (string-arg)) entry-page]
+     [("action" "delete" (string-arg) (string-arg) (string-arg)) delete-entry-page]
      [("log" (string-arg) (string-arg) (string-arg) (string-arg)) table-page]
      [("log" (string-arg) (string-arg) (string-arg) (string-arg)
        "plot" (integer-arg) (integer-arg) (integer-arg) ...) render-table-image]
@@ -144,13 +145,17 @@
 		   (thead
 		    (tr ((class "ruled"))
 			(th "Entry name")
-			(th "Created")))
+			(th "Created")
+			(th "Delete link")))
 		   (tbody
 		    ,@(for/list [(E group)]
 			(match-define (<logbook-entry> _ _ (== project) name type created-time) E)
 			`(tr (td (a ((href ,(logbook-url entry-page project type name)))
 				    ,name))
-			     (td ,(pretty-time created-time)))))))))
+			     (td ,(pretty-time created-time))
+			     (td (a ((href ,(logbook-url delete-entry-page project type name))
+				     (class "muted danger"))
+				    "delete")))))))))
 	  ))
 
   (define (entry-type-page req project entry-type)
@@ -165,13 +170,17 @@
 	     (thead
 	      (tr ((class "ruled"))
 		  (th "Entry name")
-		  (th "Created")))
+		  (th "Created")
+		  (th "Delete link")))
 	     (tbody
 	      ,@(for/list [(E (logbook-entries L #:project project #:type entry-type))]
 		  (match-define (<logbook-entry> _ _ (== project) name type created-time) E)
 		  `(tr (td (a ((href ,(logbook-url entry-page project type name)))
 			      ,name))
-		       (td ,(pretty-time created-time)))))))
+		       (td ,(pretty-time created-time))
+		       (td (a ((href ,(logbook-url delete-entry-page project type name))
+			       (class "muted danger"))
+			      "delete")))))))
 	  ))
 
   (define (default-plot-columns T)
@@ -246,63 +255,114 @@
 	(logbook-entry L project name entry-type #:create? #f)))
 
   (define (entry-page req project entry-type entry0)
+    (match (lookup-entry project entry0 entry-type)
+      [#f (redirect-to (logbook-url entry-type-page project entry-type))]
+      [E
+       (define entry (logbook-entry-name E))
+       (page (format "~a" entry)
+	     `(div
+	       ,(link-buttons
+		 `((a ((href ,(logbook-url project-page project)))
+		      ,(format "Project ~a" project))
+		   (a ((href ,(logbook-url entry-type-page project entry-type)))
+		      ,(format "Type ~a" (pretty-entry-type entry-type)))
+		   (a ((href ,(logbook-url entry-page project entry-type entry)))
+		      "Permalink")
+		   (a ((href ,(logbook-url delete-entry-page project entry-type entry))
+		       (class "danger"))
+		      "Delete")))
+	       ,@(for/list [(T (logbook-tables E))]
+		   (match-define (<logbook-table> _ _ _ name type cols created-time) T)
+		   `(div
+		     (h2 ((class "table-name"))
+			 (a ((href ,(logbook-url table-page project entry-type entry0 name)))
+			    ,name))
+		     (h3 ((class "table-type")) ,type)
+		     (h3 ((class "table-created-time")) ,(pretty-time created-time))
+		     ,(format-table entry0 T))))
+	     #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
+			       "latest entry of this type")))]))
+
+  (define (delete-entry-page req project entry-type entry0)
     (define E (lookup-entry project entry0 entry-type))
-    (define entry (logbook-entry-name E))
-    (page (format "~a" entry)
-	  `(div
-	    ,(link-buttons
-	      `((a ((href ,(logbook-url project-page project)))
-		   ,(format "Project ~a" project))
-		(a ((href ,(logbook-url entry-type-page project entry-type)))
-		   ,(format "Type ~a" (pretty-entry-type entry-type)))
-		(a ((href ,(logbook-url entry-page project entry-type entry)))
-		   "Permalink")))
-	    ,@(for/list [(T (logbook-tables E))]
-		(match-define (<logbook-table> _ _ _ name type cols created-time) T)
-		`(div
-		  (h2 ((class "table-name"))
-		      (a ((href ,(logbook-url table-page project entry-type entry0 name))) ,name))
-		  (h3 ((class "table-type")) ,type)
-		  (h3 ((class "table-created-time")) ,(pretty-time created-time))
-		  ,(format-table entry0 T))))
-	  #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
-			    "latest entry of this type"))))
+    (when E
+      (define entry (logbook-entry-name E))
+      (send/suspend
+       (lambda (k-url)
+	 (page (format "Delete ~a?" entry)
+	       `(form ((method "POST")
+		       (action ,k-url))
+		      (div ((class "delete-confirmation"))
+			   (h1 "DANGER")
+			   (p "You are about to delete entry:")
+			   (p (span ((class "entry-name"))
+				    ,entry))
+			   (p "This cannot be undone.")
+			   (p ((class "confirmation-checkbox"))
+			      (input ((type "checkbox")
+				      (id "confirm_checkbox")
+				      (name "confirm")
+				      (onclick "update_confirm_button_status()")))
+			      (label ((for "confirm_checkbox"))
+				     "Yes, I want to delete the data."))
+			   (button ((disabled "disabled")
+				    (type "submit")
+				    (id "confirm_button"))
+				   "Confirm"))))))
+      (delete-logbook-entry! E))
+    (redirect-to (logbook-url entry-type-page
+			      project
+			      entry-type)))
 
   (define (table-page req project entry-type entry0 table)
-    (define E (lookup-entry project entry0 entry-type))
-    (define entry (logbook-entry-name E))
-    (define T (logbook-table E table #:create? #f))
-    (match-define (<logbook-table> _ _ _ name type cols created-time) T)
-    (page (format "~a" table)
-	  `(div
-	    ,(link-buttons
-	      `((a ((href ,(logbook-url project-page project)))
-		   ,(format "Project ~a" project))
-		(a ((href ,(logbook-url entry-page project entry-type entry)))
-		   ,(format "Entry ~a" entry))
-		(a ((href ,(logbook-url table-page project entry-type entry table)))
-		   "Permalink")))
-	    (h2 ((class "table-type")) ,type)
-	    (h2 ((class "table-created-time")) ,(pretty-time created-time))
-	    ,(format-table entry0 T))
-	  #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
-			    "latest entry of this type")
-		      (list (logbook-url table-page project entry-type "--latest--" table)
-			    (format "latest ~a table" table)))))
+    (match (lookup-entry project entry0 entry-type)
+      [#f (redirect-to (logbook-url entry-type-page project entry-type))]
+      [E
+       (define entry (logbook-entry-name E))
+       (define T (logbook-table E table #:create? #f))
+       (match-define (<logbook-table> _ _ _ name type cols created-time) T)
+       (page (format "~a" table)
+	     `(div
+	       ,(link-buttons
+		 `((a ((href ,(logbook-url project-page project)))
+		      ,(format "Project ~a" project))
+		   (a ((href ,(logbook-url entry-page project entry-type entry)))
+		      ,(format "Entry ~a" entry))
+		   (a ((href ,(logbook-url table-page project entry-type entry table)))
+		      "Permalink")))
+	       (h2 ((class "table-type")) ,type)
+	       (h2 ((class "table-created-time")) ,(pretty-time created-time))
+	       ,(format-table entry0 T))
+	     #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
+			       "latest entry of this type")
+			 (list (logbook-url table-page project entry-type "--latest--" table)
+			       (format "latest ~a table" table))))]))
+
+  (define (image-not-found project entry-type entry0 table)
+    (response/output
+     #:code 404
+     #:message #"Table not found"
+     #:mime-type #"text/plain"
+     (lambda (p)
+       (fprintf p "Table ~a/~a/~a/~a not found\n" project entry-type entry0 table))))
 
   (define (default-render-table-image req project entry-type entry0 table)
-    (define E (lookup-entry project entry0 entry-type))
-    (define entry (logbook-entry-name E))
-    (define T (logbook-table E table #:create? #f))
-    (match-define (list* xaxis yaxes) (default-plot-columns T))
-    (render-table-image* E T xaxis yaxes))
+    (match (lookup-entry project entry0 entry-type)
+      [#f (image-not-found project entry-type entry0 table)]
+      [E
+       (define entry (logbook-entry-name E))
+       (define T (logbook-table E table #:create? #f))
+       (match-define (list* xaxis yaxes) (default-plot-columns T))
+       (render-table-image* E T xaxis yaxes)]))
 
   (define (render-table-image req project entry-type entry0 table xaxis yaxis0 yaxesN)
-    (define E (lookup-entry project entry0 entry-type))
-    (define entry (logbook-entry-name E))
-    (define T (logbook-table E table #:create? #f))
-    (define yaxes (cons yaxis0 yaxesN))
-    (render-table-image* E T xaxis yaxes))
+    (match (lookup-entry project entry0 entry-type)
+      [#f (image-not-found project entry-type entry0 table)]
+      [E
+       (define entry (logbook-entry-name E))
+       (define T (logbook-table E table #:create? #f))
+       (define yaxes (cons yaxis0 yaxesN))
+       (render-table-image* E T xaxis yaxes)]))
 
   (define (render-table-image* E T xaxis yaxes)
     (define-values (x-label y-label)

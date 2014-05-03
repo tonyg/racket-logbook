@@ -366,3 +366,40 @@ ul.link-buttons li a {
 	margin-right: 0.5em;
 	padding: 0.33em 0.5em;
 }
+
+ul.link-buttons li a.danger {
+    background: red;
+}
+
+a.danger {
+    color: #f44;
+}
+
+.delete-confirmation {
+    text-align: center;
+    background: red;
+    color: white;
+    font-size: 150%;
+}
+
+.delete-confirmation h1 {
+    margin: 0;
+    text-align: center;
+    background: red;
+    color: white;
+    border-bottom: solid white 2px;
+}
+
+.delete-confirmation button {
+    margin: 1em;
+}
+
+.delete-confirmation .entry-name {
+    color: red;
+    background: white;
+    padding: 0.5em;
+}
+
+.delete-confirmation .confirmation-checkbox {
+    font-size: 60%;
+}
