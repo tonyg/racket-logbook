@@ -33,7 +33,10 @@
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
-	[ss (values ((@ (car plot-columns)) ss) ((@ (cadr plot-columns)) ss))]))
+	[ss
+	 (define cs (or plot-columns (logbook-plot-columns)))
+	 (values (format "~a" ((@ (car cs)) ss))
+		 (format "~a" ((@ (cadr cs)) ss)))]))
     (plot-new-window? #t)
     (match plot-output
       ['screen

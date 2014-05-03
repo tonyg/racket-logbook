@@ -5,7 +5,10 @@
 (require "main.rkt")
 
 (provide logbook-table->points
+	 logbook-plot-columns
 	 @)
+
+(define logbook-plot-columns (make-parameter '(0 1)))
 
 (define ((@ . path) datum)
   (let walk ((path path) (datum datum))
@@ -41,5 +44,5 @@
 
 (define (logbook-table->points T #:columns [columns #f])
   (for/list ((r (read-logbook-data T)))
-    (for/list ((c (or columns '(0 1))))
+    (for/list ((c (or columns (logbook-plot-columns))))
       ((@ c) r))))
