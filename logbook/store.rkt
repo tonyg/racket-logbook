@@ -79,9 +79,13 @@
 					     filter-names)
 					" and ")
 			   (if order-by
-			       (string-append " order by "
-					      (string-join order-by ",")
-					      (if ascending? " asc" " desc"))
+			       (string-append
+				" order by "
+				(string-join (map (lambda (o) (string-append
+							       o
+							       (if ascending? " asc" " desc")))
+						  order-by)
+					     ", "))
 			       "")
 			   (if limit (format " limit ~a" limit) "")
 			   ))
@@ -190,7 +194,7 @@
   (match (simple-query (logbook-db book)
 		       "logbook_entry"
 		       '("id" "entry_name" "entry_type" "created_time")
-		       #:order-by '("created_time")
+		       #:order-by '("created_time" "id")
 		       #:ascending? #f
 		       #:limit 1
 		       (list "project" project)
@@ -266,7 +270,9 @@
 			       '("id" "project" "entry_name" "entry_type" "created_time")
 			       (and project (list "project" project))
 			       (and name (list "entry_name" name))
-			       (and type (list "entry_type" type)))))]
+			       (and type (list "entry_type" type))
+			       #:order-by '("created_time" "id")
+			       #:ascending? #f)))]
     (match-define (vector id project name type stamp) rowvec)
     (logbook-entry book id project name type stamp)))
 
@@ -280,7 +286,9 @@
 			       '("id" "table_name" "table_type" "column_spec" "created_time")
 			       (list "entry_id" (logbook-entry-id entry))
 			       (and name (list "table_name" name))
-			       (and type (list "table_type" type)))))]
+			       (and type (list "table_type" type))
+			       #:order-by '("created_time" "id")
+			       #:ascending? #f)))]
     (match-define (vector id name type column-spec stamp) rowvec)
     (logbook-table book
 		   id
@@ -401,7 +409,8 @@
 					    "logbook_datum"
 					    '("id" "label" "data" "created_time")
 					    (list "table_id" (logbook-table-id table))
-					    (and label (list "label" label)))))]
+					    (and label (list "label" label))
+					    #:order-by '("id"))))]
     (match-define (vector id label data stamp) rowvec)
     (logbook-datum book id table label data stamp)))
 
