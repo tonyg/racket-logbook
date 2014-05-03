@@ -210,9 +210,10 @@
        (when (not type)
 	 (set! type ""))
        (when (logbook-verbose? book)
-	 (printf "~a: Creating logbook table ~a\n"
+	 (printf "~a: Creating logbook table ~a with column-spec ~v\n"
 		 (logbook-entry-fullname entry)
-		 name)
+		 name
+		 column-spec)
 	 (flush-output))
        (define stamp (current-seconds))
        (define id
