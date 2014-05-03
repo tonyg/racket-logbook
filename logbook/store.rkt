@@ -12,13 +12,17 @@
 	 (except-out (struct-out logbook-entry) logbook-entry)
 	 (except-out (struct-out logbook-table) logbook-table)
 	 (rename-out (struct-out logbook-datum) [logbook-datum <logbook-datum>])
+	 logbook-entry-fullname
+	 logbook-table-fullname
 
+	 default-logbook-name
 	 default-logbook
 	 open-logbook
 	 close-logbook
 
 	 (rename-out [logbook-entry <logbook-entry>] [get-logbook-entry logbook-entry])
 	 (rename-out [logbook-table <logbook-table>] [get-logbook-table logbook-table])
+	 latest-logbook-entry
 
 	 logbook-entries
 	 logbook-tables
@@ -48,7 +52,11 @@
                   [sql:exn:sqlite? (lambda (e) failure)])
     body ...))
 
-(define (simple-query db table-name fields-selected . constraints0)
+(define (simple-query db table-name fields-selected
+		      #:order-by [order-by #f]
+		      #:ascending? [ascending? #t]
+		      #:limit [limit #f]
+		      . constraints0)
   (define constraints (filter-map values constraints0))
   (define filter-names (map car constraints))
   (define filter-values (map cadr constraints))
@@ -59,21 +67,34 @@
 			   (if (null? constraints) "" " where ")
 			   (string-join (map (lambda (n) (string-append "("n" = ?)"))
 					     filter-names)
-					" and ")))
-  ;; (display q) (newline)
+					" and ")
+			   (if order-by
+			       (string-append " order by "
+					      (string-join order-by ",")
+					      (if ascending? " asc" " desc"))
+			       "")
+			   (if limit (format " limit ~a" limit) "")
+			   ))
+  (log-debug "logbook Q:  ~a" q)
+  (log-debug "logbook Ps: ~v" filter-values)
   (match (apply sql:select db q filter-values)
     ['() '()]
-    [(list* _ rowvecs) rowvecs]))
+    [(list* _ rowvecs)
+     (when (log-level? (current-logger) 'debug)
+       (for ((r rowvecs)) (log-debug "logbook R:  ~v" r)))
+     rowvecs]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define (default-logbook-name)
+  (or (getenv "RACKET_LOGBOOK")
+      (error 'default-logbook-name "Environment variable RACKET_LOGBOOK not defined")))
+
 (define (default-logbook #:verbose? [verbose? #f])
-  (open-logbook (or (getenv "RACKET_LOGBOOK")
-		    (error 'default-logbook "Environment variable RACKET_LOGBOOK not defined")
-		    )
-		#:verbose? verbose?))
+  (open-logbook (default-logbook-name) #:verbose? verbose?))
 
 (define (open-logbook db-path #:verbose? [verbose? #f])
+  (when (string? db-path) (set! db-path (string->path db-path)))
   (define book (logbook (sql:open db-path) verbose?))
   (initialize! book)
   book)
@@ -115,31 +136,47 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (get-logbook-entry book project name type)
-  (match (sql:select (logbook-db book)
-		     (string-append "select id, created_time from logbook_entry where"
-				    " project = ? and"
-				    " entry_name = ? and"
-				    " entry_type = ?")
+(define (get-logbook-entry book project name [type #f] #:create? [create? #t])
+  (match (simple-query (logbook-db book)
+		       "logbook_entry"
+		       '("id" "entry_type" "created_time")
+		       (list "project" project)
+		       (list "entry_name" name)
+		       (and type (list "entry_type" type)))
+    ['()
+     (cond
+      [(not create?) #f]
+      [else
+       (when (not type)
+	 (set! type ""))
+       (when (logbook-verbose? book)
+	 (printf "~a: Creating logbook entry ~a\n" project name)
+	 (flush-output))
+       (define stamp (current-seconds))
+       (define id
+	 (sql:insert (logbook-db book)
+		     (string-append "insert into logbook_entry"
+				    "(project,entry_name,entry_type,created_time)"
+				    " values (?,?,?,?)")
 		     project
 		     name
-		     type)
-    ['()
-     (when (logbook-verbose? book)
-       (printf "~a: Creating logbook entry ~a\n" project name)
-       (flush-output))
-     (define stamp (current-seconds))
-     (define id
-       (sql:insert (logbook-db book)
-		   (string-append "insert into logbook_entry"
-				  "(project,entry_name,entry_type,created_time)"
-				  " values (?,?,?,?)")
-		   project
-		   name
-		   type
-		   stamp))
-     (logbook-entry book id project name type (exact->inexact stamp))]
-    [(list _ (vector id stamp))
+		     type
+		     stamp))
+       (logbook-entry book id project name type (exact->inexact stamp))])]
+    [(list (vector id type stamp))
+     (logbook-entry book id project name type stamp)]))
+
+(define (latest-logbook-entry book project #:type [type #f])
+  (match (simple-query (logbook-db book)
+		       "logbook_entry"
+		       '("id" "entry_name" "entry_type" "created_time")
+		       #:order-by '("created_time")
+		       #:ascending? #f
+		       #:limit 1
+		       (list "project" project)
+		       (and type (list "entry_type" type)))
+    ['() #f]
+    [(list (vector id name type stamp))
      (logbook-entry book id project name type stamp)]))
 
 (define (value->written-bytes v)
@@ -148,41 +185,55 @@
 (define (written-bytes->value bs)
   (call-with-input-bytes bs read))
 
-(define (get-logbook-table entry name type #:column-spec [column-spec #f])
+(define (logbook-entry-fullname entry)
+  (format "~a/~a"
+	  (logbook-entry-project entry)
+	  (logbook-entry-name entry)))
+
+(define (get-logbook-table entry name [type #f]
+			   #:column-spec [column-spec #f]
+			   #:create? [create? #t])
   (define column-spec-str (and column-spec
 			       (value->written-bytes column-spec)))
   (define book (logbook-entry-book entry))
-  (match (sql:select (logbook-db book)
-		     (string-append "select id, created_time from logbook_table where"
-				    " entry_id = ? and"
-				    " table_name = ? and"
-				    " table_type = ? and"
-				    " column_spec = ?")
+  (match (simple-query (logbook-db book)
+		       "logbook_table"
+		       '("id" "table_type" "column_spec" "created_time")
+		       (list "entry_id" (logbook-entry-id entry))
+		       (list "table_name" name)
+		       (and type (list "table_type" type))
+		       (and column-spec-str (list "column_spec" column-spec-str)))
+    ['()
+     (cond
+      [(not create?) #f]
+      [else
+       (when (not type)
+	 (set! type ""))
+       (when (logbook-verbose? book)
+	 (printf "~a: Creating logbook table ~a\n"
+		 (logbook-entry-fullname entry)
+		 name)
+	 (flush-output))
+       (define stamp (current-seconds))
+       (define id
+	 (sql:insert (logbook-db book)
+		     (string-append "insert into logbook_table"
+				    "(entry_id,table_name,table_type,column_spec,created_time)"
+				    " values (?,?,?,?,?)")
 		     (logbook-entry-id entry)
 		     name
 		     type
-		     column-spec-str)
-    ['()
-     (when (logbook-verbose? book)
-       (printf "~a/~a: Creating logbook table ~a\n"
-	       (logbook-entry-project entry)
-	       (logbook-entry-name entry)
-	       name)
-       (flush-output))
-     (define stamp (current-seconds))
-     (define id
-       (sql:insert (logbook-db book)
-		   (string-append "insert into logbook_table"
-				  "(entry_id,table_name,table_type,column_spec,created_time)"
-				  " values (?,?,?,?,?)")
-		   (logbook-entry-id entry)
-		   name
-		   type
-		   column-spec-str
-		   stamp))
-     (logbook-table book id entry name type column-spec (exact->inexact stamp))]
-    [(list _ (vector id stamp))
-     (logbook-table book id entry name type column-spec stamp)]))
+		     column-spec-str
+		     stamp))
+       (logbook-table book id entry name type column-spec (exact->inexact stamp))])]
+    [(list (vector id type stored-spec stamp))
+     (logbook-table book
+		    id
+		    entry
+		    name
+		    type
+		    (and stored-spec (written-bytes->value stored-spec))
+		    stamp)]))
 
 (define (logbook-entries book
 			 #:project [project #f]
@@ -230,11 +281,14 @@
 		stamp))
   (logbook-datum book id table label data stamp))
 
+(define (logbook-table-fullname table)
+  (format "~a/~a"
+	  (logbook-entry-fullname (logbook-table-entry table))
+	  (logbook-table-name table)))
+
 (define (echo-datum table data label)
-  (printf "~a/~a/~a:~a:~v\n"
-	  (logbook-entry-project (logbook-table-entry table))
-	  (logbook-entry-name (logbook-table-entry table))
-	  (logbook-table-name table)
+  (printf "~a:~a:~v\n"
+	  (logbook-table-fullname table)
 	  label
 	  data)
   (flush-output))
@@ -297,4 +351,5 @@
   (logbook-entries L)
   (map logbook-tables (logbook-entries L))
   (map read-logbook-data (logbook-tables E))
+  (latest-logbook-entry L "project1")
   )
