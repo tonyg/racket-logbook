@@ -148,7 +148,15 @@
 			(th "Created")
 			(th "Delete link")))
 		   (tbody
-		    ,@(for/list [(E group)]
+		    ,@(for/list [(E (sort group
+					  (lambda (a b)
+					    (define ta (logbook-entry-created-time a))
+					    (define tb (logbook-entry-created-time b))
+					    (not
+					     (or (< ta tb)
+						 (and (= ta tb)
+						      (< (logbook-entry-id a)
+							 (logbook-entry-id b))))))))]
 			(match-define (<logbook-entry> _ _ (== project) name type created-time) E)
 			`(tr (td (a ((href ,(logbook-url entry-page project type name)))
 				    ,name))
