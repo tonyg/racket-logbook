@@ -267,7 +267,7 @@
       [#f (redirect-to (logbook-url entry-type-page project entry-type))]
       [E
        (define entry (logbook-entry-name E))
-       (page (format "~a" entry)
+       (page (format "~a: ~a" entry-type entry)
 	     `(div
 	       ,(link-buttons
 		 `((a ((href ,(logbook-url project-page project)))
