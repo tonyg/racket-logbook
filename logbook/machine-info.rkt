@@ -11,10 +11,14 @@
 
 (provide standard-logbook-entry
 	 standard-logbook-entry-name
+	 logbook-machine-info-recorded?
 	 logbook-record-machine-info!)
 
 (define (capture-system cmd)
   (string-trim (with-output-to-string (lambda () (system cmd)))))
+
+(define (logbook-machine-info-recorded? entry)
+  (and (logbook-table entry "machine-info" "machine-info" #:create? #f) #t))
 
 (define (logbook-record-machine-info! entry)
   (define T (logbook-table entry "machine-info" "machine-info"))
