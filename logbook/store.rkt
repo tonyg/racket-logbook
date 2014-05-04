@@ -86,10 +86,7 @@
 					 [msg
 					  (log-warning "logbook: Aborting transaction; msg: ~a" msg)
 					  (raise e)])))]
-      (define result (f db))
-      (when (positive? counter)
-	(log-debug "Retried ~a times on ~v" counter f))
-      result)))
+      (f db))))
 
 (define (sql:simple-query db table-name fields-selected
 			  #:distinct? [distinct? #f]
