@@ -10,6 +10,7 @@
 (require "store.rkt")
 
 (provide standard-logbook-entry
+	 standard-logbook-entry-name
 	 logbook-record-machine-info!)
 
 (define (capture-system cmd)
@@ -34,15 +35,17 @@
 (define (standard-logbook-entry book project [type #f] #:name [name #f])
   (define E (logbook-entry book
 			   project
-			   (or name
-			       (format "~a-~a"
-				       (gethostname)
-				       (parameterize ((date-display-format 'iso-8601))
-					 (date->string (current-date) #t))))
+			   (or name (standard-logbook-entry-name))
 			   type
 			   #:create? #t))
   (logbook-record-machine-info! E)
   E)
+
+(define (standard-logbook-entry-name)
+  (format "~a-~a"
+	  (gethostname)
+	  (parameterize ((date-display-format 'iso-8601))
+	    (date->string (current-date) #t))))
 
 (module+ test
   (require racket/pretty)
