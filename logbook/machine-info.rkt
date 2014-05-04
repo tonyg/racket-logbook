@@ -31,13 +31,14 @@
      (write-logbook-datum! T #:label "sysctl" (capture-system "sysctl -a"))])
   T)
 
-(define (standard-logbook-entry book project [type #f])
+(define (standard-logbook-entry book project [type #f] #:name [name #f])
   (define E (logbook-entry book
 			   project
-			   (format "~a-~a"
-				   (gethostname)
-				   (parameterize ((date-display-format 'iso-8601))
-				     (date->string (current-date) #t)))
+			   (or name
+			       (format "~a-~a"
+				       (gethostname)
+				       (parameterize ((date-display-format 'iso-8601))
+					 (date->string (current-date) #t))))
 			   type
 			   #:create? #t))
   (logbook-record-machine-info! E)
