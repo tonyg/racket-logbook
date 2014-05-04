@@ -16,7 +16,7 @@ function install_callbacks(projectname, entrytype, entryname, tablename, control
 	    img.className = '';
 	    img.src =
 		'/log/' + projectname + '/' + entrytype + '/' + entryname + '/' + tablename +
-		'/plot/' + xaxis + '/' + yaxes.join('/');
+		'/plot/' + xaxis + '/' + yaxes.join('/') + '?' + (+(new Date()));
 	} else {
 	    img.className = 'display-none';
 	    img.src = '';
