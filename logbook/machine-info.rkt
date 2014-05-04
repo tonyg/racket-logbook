@@ -22,10 +22,11 @@
 
 (define (logbook-record-machine-info! entry)
   (define T (logbook-table entry "machine-info" "machine-info"))
+  (write-logbook-datum! T #:label "hostname" (gethostname))
+  (write-logbook-datum! T #:label "racket-version" (version))
   (for [(system-type-mode (in-list '(os word gc link machine so-suffix so-mode fs-change)))]
     (write-logbook-datum! T #:label (symbol->string system-type-mode)
 			  (system-type system-type-mode)))
-  (write-logbook-datum! T #:label "hostname" (gethostname))
   (when (file-exists? "/proc/cpuinfo")
     (write-logbook-datum! T #:label "cpuinfo" (file->string "/proc/cpuinfo")))
   (case (system-type)
