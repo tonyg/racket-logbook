@@ -54,20 +54,49 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define ((do-sql book) sql . params)
-  (apply sql:exec/ignore (logbook-db book) sql params))
+(define (sql:safe-rollback db)
+  (with-handlers [(sql:exn:sqlite? (lambda (e)
+				     (match (sql:errmsg db) ;; should really be a code
+				       ["cannot rollback - no transaction is active"
+					(void)] ;; we're OK in this case
+				       [msg
+					(log-warning "logbook: Rollback failed: msg = ~a" msg)
+					(raise e)])))]
+    (sql:exec/ignore db "ROLLBACK TRANSACTION")))
 
-(define-syntax-rule (exn-guard failure body ...)
-  (with-handlers ([exn:fail? (lambda (e) failure)]
-                  [sql:exn:sqlite? (lambda (e) failure)])
-    body ...))
+(define (sql:retry-transaction db f)
+  (define start-time (current-inexact-milliseconds))
+  (define last-warn-time start-time)
+  (define (maybe-warn-of-delay counter)
+    (define now (current-inexact-milliseconds))
+    (when (> (- now last-warn-time) 1000)
+      (log-warning "logbook: Delay executing ~v; ~a attempts so far in ~a milliseconds"
+		   f
+		   counter
+		   (- now start-time))
+      (set! last-warn-time now)))
+  (let retry ((counter 0))
+    (with-handlers [(sql:exn:sqlite? (lambda (e)
+				       (match (sql:errmsg db) ;; should really be a code
+					 ["database is locked"
+					  (define next-counter (+ counter 1))
+					  (sql:safe-rollback db)
+					  (maybe-warn-of-delay next-counter)
+					  (retry next-counter)]
+					 [msg
+					  (log-warning "logbook: Aborting transaction; msg: ~a" msg)
+					  (raise e)])))]
+      (define result (f db))
+      (when (positive? counter)
+	(log-debug "Retried ~a times on ~v" counter f))
+      result)))
 
-(define (simple-query db table-name fields-selected
-		      #:distinct? [distinct? #f]
-		      #:order-by [order-by #f]
-		      #:ascending? [ascending? #t]
-		      #:limit [limit #f]
-		      . constraints0)
+(define (sql:simple-query db table-name fields-selected
+			  #:distinct? [distinct? #f]
+			  #:order-by [order-by #f]
+			  #:ascending? [ascending? #t]
+			  #:limit [limit #f]
+			  . constraints0)
   (define constraints (filter-map values constraints0))
   (define filter-names (map car constraints))
   (define filter-values (map cadr constraints))
@@ -123,15 +152,11 @@
 (define (initialize! book)
   (define db (logbook-db book))
 
-  (define (retry-after thunk)
-    (sql:with-transaction (db fail) (thunk))
-    (initialize! book))
-
   ;; Creates tables.
   ;; Does no safety checks.
   (define (initialize-schema!!)
     (for-each
-     (do-sql book)
+     (lambda (stmt) (sql:exec/ignore db stmt))
      (list "create table logbook_version (version varchar)"
 	   "create table logbook_prefs (project varchar, entry_type varchar, table_type varchar, table_name varchar, pref_name varchar, pref_value blob, unique (project, entry_type, table_type, table_name, pref_name))"
 	   "create table logbook_entry (id integer primary key, project varchar, entry_name varchar, entry_type varchar, created_time real, unique (project, entry_name, entry_type))"
@@ -141,69 +166,80 @@
 
   (define (insert-bootstrap-data!!)
     (for-each
-     (do-sql book)
+     (lambda (stmt) (sql:exec/ignore db stmt))
      (list "insert into logbook_version values ('0')"
 	   )))
 
-  (match (exn-guard #f (sql:select db "select * from logbook_version"))
-    [#f (retry-after initialize-schema!!)]
-    ['() (retry-after insert-bootstrap-data!!)]
-    ['(#("version") #("0")) #t]
-    [other (error 'initialize! "Unknown logbook schema version: ~v" other)]))
+  (match (sql:retry-transaction db
+	   (lambda (db)
+	     (sql:with-transaction/lock (db immediate fail)
+	       (match (with-handlers [(sql:exn:sqlite? (lambda (e) #f))]
+			(sql:select db "select * from logbook_version"))
+		 [#f (initialize-schema!!) 'retry]
+		 ['() (insert-bootstrap-data!!) 'retry]
+		 ['(#("version") #("0")) 'ok]
+		 [other (error 'initialize! "Unknown logbook schema version: ~v" other)]))))
+    ['retry (initialize! book)]
+    ['ok (void)]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (logbook-projects book)
-  (for/list [(r (simple-query (logbook-db book)
-			      "logbook_entry"
-			      '("project")
-			      #:distinct? #t
-			      #:order-by '("project")))]
+  (for/list [(r (sql:retry-transaction (logbook-db book)
+		  (lambda (db) (sql:simple-query db
+						 "logbook_entry"
+						 '("project")
+						 #:distinct? #t
+						 #:order-by '("project")))))]
     (match-define (vector project) r)
     project))
 
 (define (get-logbook-entry book project name [type #f]
 			   #:create? [create? #t]
 			   #:created-time [override-stamp #f])
-  (match (simple-query (logbook-db book)
-		       "logbook_entry"
-		       '("id" "entry_type" "created_time")
-		       (list "project" project)
-		       (list "entry_name" name)
-		       (and type (list "entry_type" type)))
-    ['()
-     (cond
-      [(not create?) #f]
-      [else
-       (when (not type)
-	 (set! type ""))
-       (when (logbook-verbose? book)
-	 (printf "~a: Creating logbook entry ~a\n" project name)
-	 (flush-output))
-       (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
-			 (current-seconds)))
-       (define id
-	 (sql:insert (logbook-db book)
-		     (string-append "insert into logbook_entry"
-				    "(project,entry_name,entry_type,created_time)"
-				    " values (?,?,?,?)")
-		     project
-		     name
-		     type
-		     stamp))
-       (logbook-entry book id project name type (exact->inexact stamp))])]
-    [(list (vector id type stamp))
-     (logbook-entry book id project name type stamp)]))
+  (sql:retry-transaction (logbook-db book)
+    (lambda (db)
+      (sql:with-transaction/lock (db immediate fail)
+	(match (sql:simple-query db
+				 "logbook_entry"
+				 '("id" "entry_type" "created_time")
+				 (list "project" project)
+				 (list "entry_name" name)
+				 (and type (list "entry_type" type)))
+	  ['()
+	   (cond
+	    [(not create?) #f]
+	    [else
+	     (when (not type)
+	       (set! type ""))
+	     (when (logbook-verbose? book)
+	       (printf "~a: Creating logbook entry ~a\n" project name)
+	       (flush-output))
+	     (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
+			       (current-seconds)))
+	     (define id
+	       (sql:insert (logbook-db book)
+			   (string-append "insert into logbook_entry"
+					  "(project,entry_name,entry_type,created_time)"
+					  " values (?,?,?,?)")
+			   project
+			   name
+			   type
+			   stamp))
+	     (logbook-entry book id project name type (exact->inexact stamp))])]
+	  [(list (vector id type stamp))
+	   (logbook-entry book id project name type stamp)])))))
 
 (define (latest-logbook-entry book project #:type [type #f])
-  (match (simple-query (logbook-db book)
-		       "logbook_entry"
-		       '("id" "entry_name" "entry_type" "created_time")
-		       #:order-by '("created_time" "id")
-		       #:ascending? #f
-		       #:limit 1
-		       (list "project" project)
-		       (and type (list "entry_type" type)))
+  (match (sql:retry-transaction (logbook-db book)
+	   (lambda (db) (sql:simple-query db
+					  "logbook_entry"
+					  '("id" "entry_name" "entry_type" "created_time")
+					  #:order-by '("created_time" "id")
+					  #:ascending? #f
+					  #:limit 1
+					  (list "project" project)
+					  (and type (list "entry_type" type)))))
     ['() #f]
     [(list (vector id name type stamp))
      (logbook-entry book id project name type stamp)]))
@@ -226,60 +262,67 @@
   (define column-spec-str (and column-spec
 			       (value->written-bytes column-spec)))
   (define book (logbook-entry-book entry))
-  (match (simple-query (logbook-db book)
-		       "logbook_table"
-		       '("id" "table_type" "column_spec" "created_time")
-		       (list "entry_id" (logbook-entry-id entry))
-		       (list "table_name" name)
-		       (and type (list "table_type" type))
-		       (and column-spec-str (list "column_spec" column-spec-str)))
-    ['()
-     (cond
-      [(not create?) #f]
-      [else
-       (when (not type)
-	 (set! type ""))
-       (when (logbook-verbose? book)
-	 (printf "~a: Creating logbook table ~a with column-spec ~v\n"
-		 (logbook-entry-fullname entry)
-		 name
-		 column-spec)
-	 (flush-output))
-       (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
-			 (current-seconds)))
-       (define id
-	 (sql:insert (logbook-db book)
-		     (string-append "insert into logbook_table"
-				    "(entry_id,table_name,table_type,column_spec,created_time)"
-				    " values (?,?,?,?,?)")
-		     (logbook-entry-id entry)
-		     name
-		     type
-		     column-spec-str
-		     stamp))
-       (logbook-table book id entry name type column-spec (exact->inexact stamp))])]
-    [(list (vector id type stored-spec stamp))
-     (logbook-table book
-		    id
-		    entry
-		    name
-		    type
-		    (and stored-spec (written-bytes->value stored-spec))
-		    stamp)]))
+  (sql:retry-transaction (logbook-db book)
+    (lambda (db)
+      (sql:with-transaction/lock (db immediate fail)
+	(match (sql:simple-query db
+				 "logbook_table"
+				 '("id" "table_type" "column_spec" "created_time")
+				 (list "entry_id" (logbook-entry-id entry))
+				 (list "table_name" name)
+				 (and type (list "table_type" type))
+				 (and column-spec-str (list "column_spec" column-spec-str)))
+	  ['()
+	   (cond
+	    [(not create?) #f]
+	    [else
+	     (when (not type)
+	       (set! type ""))
+	     (when (logbook-verbose? book)
+	       (printf "~a: Creating logbook table ~a with column-spec ~v\n"
+		       (logbook-entry-fullname entry)
+		       name
+		       column-spec)
+	       (flush-output))
+	     (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
+			       (current-seconds)))
+	     (define id
+	       (sql:insert db
+			   (string-append
+			    "insert into logbook_table"
+			    "(entry_id,table_name,table_type,column_spec,created_time)"
+			    " values (?,?,?,?,?)")
+			   (logbook-entry-id entry)
+			   name
+			   type
+			   column-spec-str
+			   stamp))
+	     (logbook-table book id entry name type column-spec (exact->inexact stamp))])]
+	  [(list (vector id type stored-spec stamp))
+	   (logbook-table book
+			  id
+			  entry
+			  name
+			  type
+			  (and stored-spec (written-bytes->value stored-spec))
+			  stamp)])))))
 
 (define (logbook-entries book
 			 #:project [project #f]
 			 #:name [name #f]
 			 #:type [type #f])
-  (for/list [(rowvec (in-list (simple-query
-			       (logbook-db book)
-			       "logbook_entry"
-			       '("id" "project" "entry_name" "entry_type" "created_time")
-			       (and project (list "project" project))
-			       (and name (list "entry_name" name))
-			       (and type (list "entry_type" type))
-			       #:order-by '("created_time" "id")
-			       #:ascending? #f)))]
+  (for/list [(rowvec
+	      (in-list
+	       (sql:retry-transaction (logbook-db book)
+		 (lambda (db)
+		   (sql:simple-query db
+				     "logbook_entry"
+				     '("id" "project" "entry_name" "entry_type" "created_time")
+				     (and project (list "project" project))
+				     (and name (list "entry_name" name))
+				     (and type (list "entry_type" type))
+				     #:order-by '("created_time" "id")
+				     #:ascending? #f)))))]
     (match-define (vector id project name type stamp) rowvec)
     (logbook-entry book id project name type stamp)))
 
@@ -287,15 +330,18 @@
 			#:name [name #f]
 			#:type [type #f])
   (define book (logbook-entry-book entry))
-  (for/list [(rowvec (in-list (simple-query
-			       (logbook-db book)
-			       "logbook_table"
-			       '("id" "table_name" "table_type" "column_spec" "created_time")
-			       (list "entry_id" (logbook-entry-id entry))
-			       (and name (list "table_name" name))
-			       (and type (list "table_type" type))
-			       #:order-by '("created_time" "id")
-			       #:ascending? #f)))]
+  (for/list [(rowvec
+	      (in-list
+	       (sql:retry-transaction (logbook-db book)
+		 (lambda (db)
+		   (sql:simple-query db
+				     "logbook_table"
+				     '("id" "table_name" "table_type" "column_spec" "created_time")
+				     (list "entry_id" (logbook-entry-id entry))
+				     (and name (list "table_name" name))
+				     (and type (list "table_type" type))
+				     #:order-by '("created_time" "id")
+				     #:ascending? #f)))))]
     (match-define (vector id name type column-spec stamp) rowvec)
     (logbook-table book
 		   id
@@ -307,11 +353,14 @@
 
 (define (delete-logbook-entry! entry)
   (define book (logbook-entry-book entry))
-  (define Ts (logbook-tables entry))
-  (for [(T Ts)]
-    ((do-sql book) "delete from logbook_datum where table_id = ?" (logbook-table-id T))
-    ((do-sql book) "delete from logbook_table where id = ?" (logbook-table-id T)))
-  ((do-sql book) "delete from logbook_entry where id = ?" (logbook-entry-id entry))
+  (sql:retry-transaction (logbook-db book)
+    (lambda (db)
+      (sql:with-transaction/lock (db immediate fail)
+	(define Ts (logbook-tables entry))
+	(for [(T Ts)]
+	  (sql:exec/ignore db "delete from logbook_datum where table_id = ?" (logbook-table-id T))
+	  (sql:exec/ignore db "delete from logbook_table where id = ?" (logbook-table-id T)))
+	(sql:exec/ignore db "delete from logbook_entry where id = ?" (logbook-entry-id entry)))))
   (void))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -322,14 +371,16 @@
 			      #:table_name [table_name #f])
   (define (load-prefs p et tt tn)
     (for/fold [(p p)]
-	[(r (simple-query (logbook-db book)
-			  "logbook_prefs"
-			  '("project" "entry_type" "table_type" "table_name"
-			    "pref_name" "pref_value")
-			  (and project (list "project" project))
-			  (and et (list "entry_type" et))
-			  (and tt (list "table_type" tt))
-			  (and tn (list "table_name" tn))))]
+	[(r (sql:retry-transaction (logbook-db book)
+	      (lambda (db)
+		(sql:simple-query db
+				  "logbook_prefs"
+				  '("project" "entry_type" "table_type" "table_name"
+				    "pref_name" "pref_value")
+				  (and project (list "project" project))
+				  (and et (list "entry_type" et))
+				  (and tt (list "table_type" tt))
+				  (and tn (list "table_name" tn))))))]
       (match-define (vector pp et tt tn n v) r)
       (cons (list pp et tt tn (string->symbol n) (written-bytes->value v)) p)))
   (let* ((prefs (list))
@@ -356,43 +407,49 @@
 			   #:table_type [table_type #f]
 			   #:table_name [table_name #f]
 			   name value)
-  (sql:insert (logbook-db book)
-	      (string-append
-	       "insert or replace into logbook_prefs "
-	       "(project, entry_type, table_type, table_name, pref_name, pref_value) "
-	       "values (?,?,?,?,?,?)")
-	      project
-	      entry_type
-	      table_type
-	      table_name
-	      (symbol->string name)
-	      (value->written-bytes value)))
+  (sql:retry-transaction (logbook-db book)
+    (lambda (db)
+      (sql:insert db
+		  (string-append
+		   "insert or replace into logbook_prefs "
+		   "(project, entry_type, table_type, table_name, pref_name, pref_value) "
+		   "values (?,?,?,?,?,?)")
+		  project
+		  entry_type
+		  table_type
+		  table_name
+		  (symbol->string name)
+		  (value->written-bytes value)))))
 
 (define (delete-logbook-pref! book project
 			      #:entry_type [entry_type #f]
 			      #:table_type [table_type #f]
 			      #:table_name [table_name #f]
 			      name)
-  ((do-sql book) (string-append "delete from logbook_prefs where "
-				"project = ? and "
-				"entry_type = ? and "
-				"table_type = ? and "
-				"table_name = ? and "
-				"pref_name = ?")
-   project
-   entry_type
-   table_type
-   table_name
-   (symbol->string name)))
+  (sql:retry-transaction (logbook-db book)
+    (lambda (db)
+      (sql:exec/ignore db
+		       (string-append "delete from logbook_prefs where "
+				      "project = ? and "
+				      "entry_type = ? and "
+				      "table_type = ? and "
+				      "table_name = ? and "
+				      "pref_name = ?")
+		       project
+		       entry_type
+		       table_type
+		       table_name
+		       (symbol->string name)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (raw-logbook-datum!** table data label override-stamp)
+;; NOTE: must be executed inside a sql:retry-transaction
+(define (raw-logbook-datum!** db table data label override-stamp)
   (define book (logbook-table-book table))
   (define stamp (or (and override-stamp (inexact->exact (truncate override-stamp)))
 		    (current-seconds)))
   (define id
-    (sql:insert (logbook-db book)
+    (sql:insert db
 		(string-append "insert into logbook_datum "
 			       "(table_id,label,data,created_time) values (?,?,?,?)")
 		(logbook-table-id table)
@@ -405,17 +462,22 @@
   (define override-stamp (and override-stamp0 (inexact->exact (truncate override-stamp0))))
   (define book (logbook-table-book table))
   (if override-stamp
-      (match (simple-query (logbook-db book)
-			   "logbook_datum"
-			   '("id")
-			   (list "table_id" (logbook-table-id table))
-			   (list "label" label)
-			   (list "data" data)
-			   (list "created_time" override-stamp))
-	['() (raw-logbook-datum!** table data label override-stamp)]
-	[(list (vector id))
-	 (logbook-datum book id table label data override-stamp)])
-      (raw-logbook-datum!** table data label override-stamp)))
+      (sql:retry-transaction (logbook-db book)
+	(lambda (db)
+	  (sql:with-transaction/lock (db immediate fail)
+	    (match (sql:simple-query db
+				     "logbook_datum"
+				     '("id")
+				     (list "table_id" (logbook-table-id table))
+				     (list "label" label)
+				     (list "data" data)
+				     (list "created_time" override-stamp))
+	      ['() (raw-logbook-datum!** db table data label override-stamp)]
+	      [(list (vector id))
+	       (logbook-datum book id table label data override-stamp)]))))
+      (sql:retry-transaction (logbook-db book)
+	(lambda (db)
+	  (raw-logbook-datum!** db table data label override-stamp)))))
 
 (define (logbook-table-fullname table)
   (format "~a/~a"
@@ -439,12 +501,15 @@
 
 (define (raw-logbook-data table #:label [label #f])
   (define book (logbook-table-book table))
-  (for/list [(rowvec (in-list (simple-query (logbook-db book)
+  (for/list [(rowvec (in-list
+		      (sql:retry-transaction (logbook-db book)
+			(lambda (db)
+			  (sql:simple-query db
 					    "logbook_datum"
 					    '("id" "label" "data" "created_time")
 					    (list "table_id" (logbook-table-id table))
 					    (and label (list "label" label))
-					    #:order-by '("id"))))]
+					    #:order-by '("id"))))))]
     (match-define (vector id label data stamp) rowvec)
     (logbook-datum book id table label data stamp)))
 
@@ -490,3 +555,8 @@
   (map read-logbook-data (logbook-tables E))
   (latest-logbook-entry L "project1")
   )
+
+;;; Local Variables:
+;;; eval: (put 'sql:retry-transaction 'scheme-indent-function 1)
+;;; eval: (put 'sql:with-transaction/lock 'scheme-indent-function 1)
+;;; End:
