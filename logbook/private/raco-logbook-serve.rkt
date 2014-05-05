@@ -149,7 +149,7 @@
 		(define entry-type (logbook-entry-type an-E))
 		`(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
 		    ,(pretty-entry-type entry-type))))
-	    ,(thumbnails-table (map car grouped-Es)) ;; newest entries in each group
+	    ,(thumbnails-table (map car grouped-Es) #t) ;; newest entries in each group
 	    (h2 "All entries by entry-type")
 	    ,@(for/list [(group grouped-Es)]
 		(define an-E (car group)) ;; we know the group is nonempty
@@ -209,7 +209,7 @@
 			      "delete")))))))
 	  ))
 
-  (define (thumbnails-table Es)
+  (define (thumbnails-table Es include-entry-type?)
     ;; First, index all the tables by name and type.
     (define ETs (map (lambda (E)
 		       (list E (make-hash (map (lambda (T)
@@ -242,7 +242,11 @@
 	     ,@(for/list [(ET ETs)]
 		 (define E (car ET))
 		 (match-define (<logbook-entry> _ _ project name type created-time) E)
-		 `(tr (td (a ((href ,(logbook-url entry-page project type name)))
+		 `(tr (td ,@(if include-entry-type?
+				`((em ,type)
+				  (br))
+				'())
+			  (a ((href ,(logbook-url entry-page project type name)))
 			     ,name)
 			  (br)
 			  ,(pretty-time created-time))
@@ -282,7 +286,7 @@
 		   "Summary page")
 		(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
 		   "Latest entry")))
-	    ,(thumbnails-table Es))))
+	    ,(thumbnails-table Es #f))))
 
   (define (default-plot-columns T)
     (define E (logbook-table-entry T))
