@@ -126,9 +126,18 @@
 		  `(tr (td (a ((href ,(logbook-url project-page p))) ,p)))))))
 	  ))
 
+  (define (entry<? a b)
+    (define ta (logbook-entry-created-time a))
+    (define tb (logbook-entry-created-time b))
+    (or (< ta tb)
+	(and (= ta tb)
+	     (< (logbook-entry-id a)
+		(logbook-entry-id b)))))
+
   (define (project-page req project)
     (define Es (logbook-entries L #:project project))
-    (define grouped-Es (group-by logbook-entry-type Es))
+    (define grouped-Es (map (lambda (group) (sort group (lambda (a b) (entry<? b a))))
+			    (group-by logbook-entry-type Es)))
     (define title (format "Project ~a" project))
     (page title
 	  `(div
@@ -140,6 +149,7 @@
 		(define entry-type (logbook-entry-type an-E))
 		`(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
 		    ,(pretty-entry-type entry-type))))
+	    ,(thumbnails-table (map car grouped-Es)) ;; newest entries in each group
 	    (h2 "All entries by entry-type")
 	    ,@(for/list [(group grouped-Es)]
 		(define an-E (car group)) ;; we know the group is nonempty
@@ -160,15 +170,7 @@
 			(th "Created")
 			(th "Delete link")))
 		   (tbody
-		    ,@(for/list [(E (sort group
-					  (lambda (a b)
-					    (define ta (logbook-entry-created-time a))
-					    (define tb (logbook-entry-created-time b))
-					    (not
-					     (or (< ta tb)
-						 (and (= ta tb)
-						      (< (logbook-entry-id a)
-							 (logbook-entry-id b))))))))]
+		    ,@(for/list [(E group)]
 			(match-define (<logbook-entry> _ _ (== project) name type created-time) E)
 			`(tr (td (a ((href ,(logbook-url entry-page project type name)))
 				    ,name))
@@ -207,9 +209,8 @@
 			      "delete")))))))
 	  ))
 
-  (define (entry-type-thumbnails-page req project entry-type)
-    (define title (format "Entry type ~a" (pretty-entry-type entry-type)))
-    (define Es (logbook-entries L #:project project #:type entry-type))
+  (define (thumbnails-table Es)
+    ;; First, index all the tables by name and type.
     (define ETs (map (lambda (E)
 		       (list E (make-hash (map (lambda (T)
 						 (cons (list (logbook-table-name T)
@@ -218,6 +219,7 @@
 					       (logbook-tables E)))))
 		     Es))
 
+    ;; Now, get the unique combinations.
     (define table-names-and-types '())
     (for* [(ET ETs) ((name-and-type T) (in-hash (cadr ET)))]
       (when (and (not (member name-and-type table-names-and-types))
@@ -226,6 +228,50 @@
     (set! table-names-and-types (reverse table-names-and-types))
     (define nonce (number->string (current-inexact-milliseconds)))
 
+    ;; Finally, build the table.
+    `(table ((class "thumbnails"))
+	    (thead
+	     (tr ((class "ruled"))
+		 (th "Entry")
+		 ,@(for/list [(name-and-type table-names-and-types)]
+		     `(th ((class "thumbnail-column"))
+			  ,(car name-and-type)
+			  (br)
+			  ,(cadr name-and-type)))))
+	    (tbody
+	     ,@(for/list [(ET ETs)]
+		 (define E (car ET))
+		 (match-define (<logbook-entry> _ _ project name type created-time) E)
+		 `(tr (td (a ((href ,(logbook-url entry-page project type name)))
+			     ,name)
+			  (br)
+			  ,(pretty-time created-time))
+		      ,@(for/list [(name-and-type table-names-and-types)]
+			  (define T (hash-ref (cadr ET) name-and-type (lambda () #f)))
+			  (if T
+			      (let ((table-name (logbook-table-name T)))
+				`(td
+				  ((class "thumbnail-column"))
+				  (a ((href ,(logbook-url table-page
+							  project
+							  type
+							  name
+							  table-name)))
+				     (img ((width ,(number->string plot-thumbnail-width))
+					   (height ,(number->string plot-thumbnail-height))
+					   (class "plot-thumbnail")
+					   (src ,(string-append
+						  (logbook-url default-render-table-thumbnail
+							       project
+							       type
+							       name
+							       table-name)
+						  "?" nonce)))))))
+			      `(td ((class "thumbnail-column"))))))))))
+
+  (define (entry-type-thumbnails-page req project entry-type)
+    (define title (format "Entry type ~a" (pretty-entry-type entry-type)))
+    (define Es (logbook-entries L #:project project #:type entry-type))
     (page title
 	  `(div
 	    (h1 ,title)
@@ -236,47 +282,7 @@
 		   "Summary page")
 		(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
 		   "Latest entry")))
-	    (table
-	     ((class "thumbnails"))
-	     (thead
-	      (tr ((class "ruled"))
-		  (th "Entry")
-		  ,@(for/list [(name-and-type table-names-and-types)]
-		      `(th ((class "thumbnail-column"))
-			   ,(car name-and-type)
-			   (br)
-			   ,(cadr name-and-type)))))
-	     (tbody
-	      ,@(for/list [(ET ETs)]
-		  (define E (car ET))
-		  (match-define (<logbook-entry> _ _ (== project) name type created-time) E)
-		  `(tr (td (a ((href ,(logbook-url entry-page project type name)))
-			      ,name)
-			   (br)
-			   ,(pretty-time created-time))
-		       ,@(for/list [(name-and-type table-names-and-types)]
-			   (define T (hash-ref (cadr ET) name-and-type (lambda () #f)))
-			   (define table-name (logbook-table-name T))
-			   (if T
-			       `(td
-				 ((class "thumbnail-column"))
-				 (a ((href ,(logbook-url table-page
-							 project
-							 type
-							 name
-							 table-name)))
-				    (img ((width ,(number->string plot-thumbnail-width))
-					  (height ,(number->string plot-thumbnail-height))
-					  (class "plot-thumbnail")
-					  (src ,(string-append
-						 (logbook-url default-render-table-thumbnail
-							      project
-							      type
-							      name
-							      table-name)
-						 "?" nonce))))))
-			       `(td ((class "thumbnail-column"))))))))))
-	  ))
+	    ,(thumbnails-table Es))))
 
   (define (default-plot-columns T)
     (define E (logbook-table-entry T))
