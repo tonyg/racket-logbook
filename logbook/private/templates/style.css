@@ -394,7 +394,10 @@ a.danger {
     margin: 1em;
 }
 
-.delete-confirmation .entry-name {
+.delete-confirmation .entry-name,
+.delete-confirmation .entry-type,
+.delete-confirmation .project
+{
     color: red;
     background: white;
     padding: 0.5em;
