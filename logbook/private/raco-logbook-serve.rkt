@@ -355,7 +355,7 @@
       [#f (redirect-to (logbook-url entry-type-page project entry-type))]
       [E
        (define entry (logbook-entry-name E))
-       (page (format "~a/~a" entry-type entry)
+       (page (format "~a/~a" entry-type entry0)
 	     `(div
 	       (h2 ,entry-type)
 	       (h1 ,entry)
@@ -432,7 +432,7 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (match-define (<logbook-table> _ _ _ name type cols created-time) T)
-       (page (format "~a/~a/~a" table entry-type entry)
+       (page (format "~a/~a/~a" table entry-type entry0)
 	     `(div
 	       (h2 ,entry " (" ,entry-type ")")
 	       (h1 ,table)
