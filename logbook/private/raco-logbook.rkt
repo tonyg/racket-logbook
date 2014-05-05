@@ -97,7 +97,8 @@
       (list-table E T))))
 
 (define (list-tables L project entry entry-type table-type)
-  (for ((E (logbook-entry L project entry entry-type #:create? #f)))
+  (define E (logbook-entry L project entry entry-type #:create? #f))
+  (when E
     (for ((T (logbook-tables E #:type table-type)))
       (list-table E T))))
 
@@ -135,6 +136,30 @@
     (when (not (eof-object? X))
       (import-entry L X)
       (loop))))
+
+(define (get-entry-note L project entry entry-type)
+  (define E (logbook-entry L project entry entry-type #:create? #f))
+  (define note (and E (get-logbook-note E)))
+  (when note (display (logbook-note-text note))))
+
+(define (set-entry-note L project entry entry-type)
+  (define E (logbook-entry L project entry entry-type #:create? #f))
+  (unless E (error 'set-entry-note "Entry ~a does not exist" entry))
+  (set-logbook-note! E (port->string)))
+
+(define (get-table-note L project entry entry-type table table-type)
+  (define E (logbook-entry L project entry entry-type #:create? #f))
+  (when E
+    (define T (logbook-table E table table-type #:create? #f))
+    (define note (and T (get-logbook-note T)))
+    (when note (display (logbook-note-text note)))))
+
+(define (set-table-note L project entry entry-type table table-type)
+  (define E (logbook-entry L project entry entry-type #:create? #f))
+  (when E
+    (define T (logbook-table E table table-type #:create? #f))
+    (unless T (error 'set-table-note "Table ~a does not exist" table))
+    (set-logbook-note! T (port->string))))
 
 (define (main)
   (define jobs '())
@@ -205,6 +230,19 @@
      ["--list-tables" project entry
       "list all tables in the named project entry"
       (push-job! list-tables project entry entry-type table-type)]
+
+     ["--get-entry-note" project entry
+      "print an entry note"
+      (push-job! get-entry-note project entry entry-type)]
+     ["--set-entry-note" project entry
+      "set an entry note from stdin"
+      (push-job! set-entry-note project entry entry-type)]
+     ["--get-table-note" project entry table
+      "print a table note"
+      (push-job! get-table-note project entry entry-type table table-type)]
+     ["--set-table-note" project entry table
+      "set a table note from stdin"
+      (push-job! set-table-note project entry entry-type table table-type)]
 
      ["--plot" project table
       "produce a simple plot of the named table"

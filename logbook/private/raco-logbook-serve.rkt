@@ -350,6 +350,14 @@
 	(latest-logbook-entry L project #:type entry-type)
 	(logbook-entry L project name entry-type #:create? #f)))
 
+  (define (notes-table? T)
+    (and (equal? (logbook-table-type T) "notes")
+	 (equal? (logbook-table-name T) "notes")))
+
+  (define (notes-editor E-or-T)
+    `(div) ;; TODO
+    )
+
   (define (entry-page req project entry-type entry0)
     (match (lookup-entry project entry0 entry-type)
       [#f (redirect-to (logbook-url entry-type-page project entry-type))]
@@ -371,7 +379,9 @@
 		      "Delete")))
 	       (h2 ((class "created-time"))
 		   ,(pretty-time (logbook-entry-created-time E)))
-	       ,@(for/list [(T (logbook-tables E))]
+	       ,(notes-editor E)
+	       ,@(for/list [(T (logbook-tables E))
+			    #:when (not (notes-table? T))]
 		   (match-define (<logbook-table> _ _ _ name type cols created-time) T)
 		   `(div
 		     (h2 ((class "table-name"))
@@ -444,6 +454,7 @@
 		   (a ((href ,(logbook-url table-page project entry-type entry table)))
 		      "Permalink")))
 	       (h2 ((class "created-time")) ,(pretty-time created-time))
+	       ,(notes-editor T)
 	       ,@(if (not (equal? type ""))
 		     `((h2 ((class "table-type")) ,type))
 		     '())
