@@ -26,6 +26,9 @@
 (define plot-image-width 700)
 (define plot-image-height 450)
 
+(define plot-thumbnail-width 100)
+(define plot-thumbnail-height 75)
+
 ;; Holy fuck this is stupid.
 ;; https://groups.google.com/d/msg/racket-users/-yVo3542Bew/6DzplG6UA4EJ
 (define-namespace-anchor dynamic-template-anchor)
@@ -99,30 +102,37 @@
      [("style.css") serve-style]
      [("log" (string-arg)) project-page]
      [("log" (string-arg) (string-arg)) entry-type-page]
+     [("thumbnails" (string-arg) (string-arg)) entry-type-thumbnails-page]
      [("log" (string-arg) (string-arg) (string-arg)) entry-page]
      [("action" "delete" (string-arg) (string-arg) (string-arg)) delete-entry-page]
      [("log" (string-arg) (string-arg) (string-arg) (string-arg)) table-page]
      [("log" (string-arg) (string-arg) (string-arg) (string-arg)
        "plot" (integer-arg) (integer-arg) (integer-arg) ...) render-table-image]
      [("log" (string-arg) (string-arg) (string-arg) (string-arg)
+       "defaultthumbnail") default-render-table-thumbnail]
+     [("log" (string-arg) (string-arg) (string-arg) (string-arg)
        "defaultplot") default-render-table-image]))
 
   (define (list-projects req)
     (page "All Projects"
-	  `(table
-	    (thead
-	     (tr ((class "ruled"))
-		 (th "Project name")))
-	    (tbody
-	     ,@(for/list [(p (logbook-projects L))]
-		 `(tr (td (a ((href ,(logbook-url project-page p))) ,p))))))
+	  `(div
+	    (h1 "All projects")
+	    (table
+	     (thead
+	      (tr ((class "ruled"))
+		  (th "Project name")))
+	     (tbody
+	      ,@(for/list [(p (logbook-projects L))]
+		  `(tr (td (a ((href ,(logbook-url project-page p))) ,p)))))))
 	  ))
 
   (define (project-page req project)
     (define Es (logbook-entries L #:project project))
     (define grouped-Es (group-by logbook-entry-type Es))
-    (page (format "Project ~a" project)
+    (define title (format "Project ~a" project))
+    (page title
 	  `(div
+	    (h1 ,title)
 	    (h2 "Latest entries by entry-type")
 	    ,(link-buttons
 	      (for/list [(group grouped-Es)]
@@ -139,6 +149,8 @@
 		  ,(link-buttons
 		    `((a ((href ,(logbook-url entry-type-page project entry-type)))
 			 "Summary page")
+		      (a ((href ,(logbook-url entry-type-thumbnails-page project entry-type)))
+			 "Thumbnails page")
 		      (a ((href ,(logbook-url entry-page project entry-type "--latest--")))
 			 "Latest entry")))
 		  (table
@@ -167,11 +179,15 @@
 	  ))
 
   (define (entry-type-page req project entry-type)
-    (page (format "Entry type ~a" (pretty-entry-type entry-type))
+    (define title (format "Entry type ~a" (pretty-entry-type entry-type)))
+    (page title
 	  `(div
+	    (h1 ,title)
 	    ,(link-buttons
 	      `((a ((href ,(logbook-url project-page project)))
 		   ,(format "Project ~a" project))
+		(a ((href ,(logbook-url entry-type-thumbnails-page project entry-type)))
+		   "Thumbnails page")
 		(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
 		   "Latest entry")))
 	    (table
@@ -191,6 +207,77 @@
 			      "delete")))))))
 	  ))
 
+  (define (entry-type-thumbnails-page req project entry-type)
+    (define title (format "Entry type ~a" (pretty-entry-type entry-type)))
+    (define Es (logbook-entries L #:project project #:type entry-type))
+    (define ETs (map (lambda (E)
+		       (list E (make-hash (map (lambda (T)
+						 (cons (list (logbook-table-name T)
+							     (logbook-table-type T))
+						       T))
+					       (logbook-tables E)))))
+		     Es))
+
+    (define table-names-and-types '())
+    (for* [(ET ETs) ((name-and-type T) (in-hash (cadr ET)))]
+      (when (and (not (member name-and-type table-names-and-types))
+		 (logbook-table-column-spec T))
+	(set! table-names-and-types (cons name-and-type table-names-and-types))))
+    (set! table-names-and-types (reverse table-names-and-types))
+    (define nonce (number->string (current-inexact-milliseconds)))
+
+    (page title
+	  `(div
+	    (h1 ,title)
+	    ,(link-buttons
+	      `((a ((href ,(logbook-url project-page project)))
+		   ,(format "Project ~a" project))
+		(a ((href ,(logbook-url entry-type-page project entry-type)))
+		   "Summary page")
+		(a ((href ,(logbook-url entry-page project entry-type "--latest--")))
+		   "Latest entry")))
+	    (table
+	     ((class "thumbnails"))
+	     (thead
+	      (tr ((class "ruled"))
+		  (th "Entry")
+		  ,@(for/list [(name-and-type table-names-and-types)]
+		      `(th ((class "thumbnail-column"))
+			   ,(car name-and-type)
+			   (br)
+			   ,(cadr name-and-type)))))
+	     (tbody
+	      ,@(for/list [(ET ETs)]
+		  (define E (car ET))
+		  (match-define (<logbook-entry> _ _ (== project) name type created-time) E)
+		  `(tr (td (a ((href ,(logbook-url entry-page project type name)))
+			      ,name)
+			   (br)
+			   ,(pretty-time created-time))
+		       ,@(for/list [(name-and-type table-names-and-types)]
+			   (define T (hash-ref (cadr ET) name-and-type (lambda () #f)))
+			   (define table-name (logbook-table-name T))
+			   (if T
+			       `(td
+				 ((class "thumbnail-column"))
+				 (a ((href ,(logbook-url table-page
+							 project
+							 type
+							 name
+							 table-name)))
+				    (img ((width ,(number->string plot-thumbnail-width))
+					  (height ,(number->string plot-thumbnail-height))
+					  (class "plot-thumbnail")
+					  (src ,(string-append
+						 (logbook-url default-render-table-thumbnail
+							      project
+							      type
+							      name
+							      table-name)
+						 "?" nonce))))))
+			       `(td ((class "thumbnail-column"))))))))))
+	  ))
+
   (define (default-plot-columns T)
     (define E (logbook-table-entry T))
     (define prefs (logbook-prefs L (logbook-entry-project E)
@@ -203,59 +290,60 @@
     (match-define (<logbook-table> _ _ (<logbook-entry> _ _ project entry entry-type _)
 				   name type cols created-time) T)
     (match-define (list* xaxis yaxes) (default-plot-columns T))
-    `(form ((name ,(format "table-~a" name)))
-	   ,@(if cols
-		 `((img ((class "display-none")
-			 (width ,(number->string plot-image-width))
-			 (height ,(number->string plot-image-height))
-			 (src "")
-			 (id ,(format "plot-~a" name)))))
-		 '())
-	   (table
-	    (thead
-	     (tr ((class "ruled"))
-		 (th "Label")
-		 ,@(if cols
-		       (for/list [(c cols)] `(th ((class "rotate")) ,(value->xexpr c)))
-		       `((th "Datum"))))
-	     ,@(if cols
-		   `((tr (th)
-			 ,@(for/list [(i (in-naturals)) (c cols)]
-			     `(th (input ((type "radio")
-					  ,@(if (= xaxis i)
-						`((checked "checked"))
-						'())
-					  (id ,(format "x-~a-~a" name i))
-					  (name ,(format "x-~a" name))
-					  (value ,(number->string i))))))))
-		   '())
-	     ,@(if cols
-		   `((tr ((class "ruled"))
-			 (th)
-			 ,@(for/list [(i (in-naturals)) (c cols)]
-			     `(th (input ((type "checkbox")
-					  ,@(if (member i yaxes)
-						`((checked "checked"))
-						'())
-					  (id ,(format "y-~a-~a" name i))
-					  (name ,(format "y-~a" name))
-					  (value ,(number->string i))))))))
-		   '())
-	     ,@(if cols
-		   `((script ,(format "install_callbacks('~a','~a','~a','~a',~a);\n"
-				      project
-				      entry-type
-				      entry0
-				      name
-				      (length cols))))
-		   '()))
-	    (tbody
-	     ,@(for/list [(R (read-logbook-data/labels T))]
-		 (match-define (list label data) R)
-		 `(tr (td ,label)
+    `(div ((class "table-block"))
+	  (form ((name ,(format "table-~a" name)))
+		,@(if cols
+		      `((img ((class "display-none")
+			      (width ,(number->string plot-image-width))
+			      (height ,(number->string plot-image-height))
+			      (src "")
+			      (id ,(format "plot-~a" name)))))
+		      '())
+		(table
+		 (thead
+		  (tr ((class "ruled"))
+		      (th "Label")
 		      ,@(if cols
-			    (for/list [(c data)] `(td ,(value->xexpr c)))
-			    (list `(td ,(value->xexpr data))))))))))
+			    (for/list [(c cols)] `(th ((class "rotate")) ,(value->xexpr c)))
+			    `((th "Datum"))))
+		  ,@(if cols
+			`((tr (th)
+			      ,@(for/list [(i (in-naturals)) (c cols)]
+				  `(th (input ((type "radio")
+					       ,@(if (= xaxis i)
+						     `((checked "checked"))
+						     '())
+					       (id ,(format "x-~a-~a" name i))
+					       (name ,(format "x-~a" name))
+					       (value ,(number->string i))))))))
+			'())
+		  ,@(if cols
+			`((tr ((class "ruled"))
+			      (th)
+			      ,@(for/list [(i (in-naturals)) (c cols)]
+				  `(th (input ((type "checkbox")
+					       ,@(if (member i yaxes)
+						     `((checked "checked"))
+						     '())
+					       (id ,(format "y-~a-~a" name i))
+					       (name ,(format "y-~a" name))
+					       (value ,(number->string i))))))))
+			'())
+		  ,@(if cols
+			`((script ,(format "install_callbacks('~a','~a','~a','~a',~a);\n"
+					   project
+					   entry-type
+					   entry0
+					   name
+					   (length cols))))
+			'()))
+		 (tbody
+		  ,@(for/list [(R (read-logbook-data/labels T))]
+		      (match-define (list label data) R)
+		      `(tr (td ,label)
+			   ,@(if cols
+				 (for/list [(c data)] `(td ,(value->xexpr c)))
+				 (list `(td ,(value->xexpr data)))))))))))
 
   (define (lookup-entry project name entry-type)
     (if (equal? name "--latest--")
@@ -267,8 +355,10 @@
       [#f (redirect-to (logbook-url entry-type-page project entry-type))]
       [E
        (define entry (logbook-entry-name E))
-       (page (format "~a: ~a" entry-type entry)
+       (page (format "~a/~a" entry-type entry)
 	     `(div
+	       (h2 ,entry-type)
+	       (h1 ,entry)
 	       ,(link-buttons
 		 `((a ((href ,(logbook-url project-page project)))
 		      ,(format "Project ~a" project))
@@ -279,14 +369,17 @@
 		   (a ((href ,(logbook-url delete-entry-page project entry-type entry))
 		       (class "danger"))
 		      "Delete")))
+	       (h2 ((class "created-time"))
+		   ,(pretty-time (logbook-entry-created-time E)))
 	       ,@(for/list [(T (logbook-tables E))]
 		   (match-define (<logbook-table> _ _ _ name type cols created-time) T)
 		   `(div
 		     (h2 ((class "table-name"))
 			 (a ((href ,(logbook-url table-page project entry-type entry0 name)))
 			    ,name))
-		     (h3 ((class "table-type")) ,type)
-		     (h3 ((class "table-created-time")) ,(pretty-time created-time))
+		     ,@(if (not (equal? type ""))
+			   `((h3 ((class "table-type")) ,type))
+			   '())
 		     ,(format-table entry0 T))))
 	     #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
 			       "latest entry of this type")))]))
@@ -297,8 +390,11 @@
       (define entry (logbook-entry-name E))
       (send/suspend
        (lambda (k-url)
-	 (page (format "Delete ~a?" entry)
+	 (define title (format "Delete ~a?" entry))
+	 (page title
 	       `(div
+		 (h2 ,entry " (" ,entry-type ")")
+		 (h1 ,title)
 		 (form ((method "POST")
 			(action ,k-url))
 		       (div ((class "delete-confirmation"))
@@ -336,8 +432,10 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (match-define (<logbook-table> _ _ _ name type cols created-time) T)
-       (page (format "~a" table)
+       (page (format "~a/~a/~a" table entry-type entry)
 	     `(div
+	       (h2 ,entry " (" ,entry-type ")")
+	       (h1 ,table)
 	       ,(link-buttons
 		 `((a ((href ,(logbook-url project-page project)))
 		      ,(format "Project ~a" project))
@@ -345,8 +443,10 @@
 		      ,(format "Entry ~a" entry))
 		   (a ((href ,(logbook-url table-page project entry-type entry table)))
 		      "Permalink")))
-	       (h2 ((class "table-type")) ,type)
-	       (h2 ((class "table-created-time")) ,(pretty-time created-time))
+	       (h2 ((class "created-time")) ,(pretty-time created-time))
+	       ,@(if (not (equal? type ""))
+		     `((h2 ((class "table-type")) ,type))
+		     '())
 	       ,(format-table entry0 T))
 	     #:nav (list (list (logbook-url entry-page project entry-type "--latest--")
 			       "latest entry of this type")
@@ -361,6 +461,15 @@
      (lambda (p)
        (fprintf p "Table ~a/~a/~a/~a not found\n" project entry-type entry0 table))))
 
+  (define (default-render-table-thumbnail req project entry-type entry0 table)
+    (match (lookup-entry project entry0 entry-type)
+      [#f (image-not-found project entry-type entry0 table)]
+      [E
+       (define entry (logbook-entry-name E))
+       (define T (logbook-table E table #:create? #f))
+       (match-define (list* xaxis yaxes) (default-plot-columns T))
+       (render-table-image* E T xaxis yaxes #t)]))
+
   (define (default-render-table-image req project entry-type entry0 table)
     (match (lookup-entry project entry0 entry-type)
       [#f (image-not-found project entry-type entry0 table)]
@@ -368,7 +477,7 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (match-define (list* xaxis yaxes) (default-plot-columns T))
-       (render-table-image* E T xaxis yaxes)]))
+       (render-table-image* E T xaxis yaxes #f)]))
 
   (define (render-table-image req project entry-type entry0 table xaxis yaxis0 yaxesN)
     (match (lookup-entry project entry0 entry-type)
@@ -377,9 +486,9 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (define yaxes (cons yaxis0 yaxesN))
-       (render-table-image* E T xaxis yaxes)]))
+       (render-table-image* E T xaxis yaxes #f)]))
 
-  (define (render-table-image* E T xaxis yaxes)
+  (define (render-table-image* E T xaxis yaxes is-thumbnail?)
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
@@ -396,8 +505,9 @@
     (response/output
      #:mime-type #"image/png"
      (lambda (p)
-       (parameterize ((plot-width plot-image-width)
-		      (plot-height plot-image-height))
+       (parameterize ((plot-width  (if is-thumbnail? plot-thumbnail-width  plot-image-width))
+		      (plot-height (if is-thumbnail? plot-thumbnail-height plot-image-height))
+		      (plot-decorations? (not is-thumbnail?)))
 	 (plot-file (for/list [(yaxis yaxes)]
 		      (define ps (logbook-table->points T #:columns (list xaxis yaxis)))
 		      (list (lines ps) (points ps)))

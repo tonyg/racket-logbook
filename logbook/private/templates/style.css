@@ -406,3 +406,20 @@ a.danger {
 .delete-confirmation .confirmation-checkbox {
     font-size: 60%;
 }
+
+div.table-block {
+    margin-top: 1.33em;
+}
+
+img.plot-thumbnail {
+    border: solid black 1px;
+}
+
+td.thumbnail-column
+{
+    width: 100px;
+    height: 75px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border: none;
+}
