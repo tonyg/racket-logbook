@@ -172,6 +172,7 @@
   (define table-type #f)
   (define plot-size #f)
   (define font-size #f)
+  (define server-ipaddr "localhost")
   (define column-names 'first-line)
   (define-syntax-rule (push-job! f arg ...)
     (let ((args (list arg ...)))
@@ -276,9 +277,12 @@
       "import entries from stdin"
       (push-job! do-import)]
 
+     ["--ip" ipaddr
+      "set IP address (or hostname) for --serve to listen on"
+      (set! server-ipaddr ipaddr)]
      ["--serve" port
       "run webserver UI"
-      (push-job! do-serve (string->number port))]
+      (push-job! do-serve server-ipaddr (string->number port))]
 
      ["--list-prefs"
       "list all current pref settings"
