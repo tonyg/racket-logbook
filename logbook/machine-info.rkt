@@ -5,7 +5,7 @@
 (require (only-in racket/system system))
 (require (only-in racket/port with-output-to-string))
 (require (only-in racket/file file->string))
-(require (only-in racket/string string-trim))
+(require (only-in racket/string string-trim string-split))
 
 (require "store.rkt")
 
@@ -48,7 +48,7 @@
 
 (define (standard-logbook-entry-name)
   (format "~a-~a"
-	  (gethostname)
+	  (car (string-split (gethostname) "."))
 	  (parameterize ((date-display-format 'iso-8601))
 	    (date->string (current-date) #t))))
 
