@@ -172,6 +172,7 @@
   (define table-type #f)
   (define plot-size #f)
   (define font-size #f)
+  (define browser #t)
   (define server-ipaddr "localhost")
   (define column-names 'first-line)
   (define-syntax-rule (push-job! f arg ...)
@@ -282,7 +283,13 @@
       (set! server-ipaddr ipaddr)]
      ["--serve" port
       "run webserver UI"
-      (push-job! do-serve server-ipaddr (string->number port))]
+      (push-job! do-serve server-ipaddr (string->number port) browser)]
+     ["--browser"
+      "open browser when server starts (default)"
+      (set! browser #t)]
+     ["--no-browser"
+      "do not open browser when server starts"
+      (set! browser #f)]
 
      ["--list-prefs"
       "list all current pref settings"

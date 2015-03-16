@@ -95,7 +95,7 @@
 		`(li ,x)))
 	(div ((class "clear")))))
 
-(define (serve-logbook L ipaddr port)
+(define (serve-logbook L ipaddr port launch-browser?)
   (define-values (logbook-dispatch logbook-url)
     (dispatch-rules
      [("") list-projects]
@@ -538,6 +538,7 @@
 
   (serve/servlet logbook-dispatch
 		 ;; #:command-line? #f
+                 #:launch-browser? launch-browser?
 		 #:listen-ip ipaddr
 		 #:port port
 		 #:server-root-path web-root
