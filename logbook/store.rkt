@@ -8,7 +8,7 @@
 		  call-with-output-bytes
 		  call-with-input-bytes))
 
-(provide (except-out (struct-out logbook) logbook)
+(provide (except-out (struct-out logbook) logbook logbook-flush-handle)
 	 (except-out (struct-out logbook-entry) logbook-entry)
 	 (except-out (struct-out logbook-table) logbook-table)
 	 (except-out (struct-out logbook-datum) logbook-datum)
@@ -47,7 +47,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(struct logbook (db verbose?) #:transparent)
+(struct logbook (db verbose? flush-handle) #:transparent)
 (struct logbook-entry (book id project name type created-time) #:transparent)
 (struct logbook-table (book id entry name type column-spec created-time) #:transparent)
 (struct logbook-datum (book id table label data created-time) #:transparent)
@@ -137,11 +137,16 @@
 
 (define (open-logbook db-path #:verbose? [verbose? #f])
   (when (string? db-path) (set! db-path (string->path db-path)))
-  (define book (logbook (sql:open db-path) verbose?))
+  (define book (logbook (sql:open db-path)
+                        verbose?
+                        (plumber-add-flush! (current-plumber)
+                                            (lambda (handle)
+                                              (close-logbook book)))))
   (initialize! book)
   book)
 
 (define (close-logbook book)
+  (plumber-flush-handle-remove! (logbook-flush-handle book))
   (sql:close (logbook-db book)))
 
 ;; Initializes the current (*db*) if it is not initialized.
