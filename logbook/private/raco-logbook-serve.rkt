@@ -541,15 +541,20 @@
               (define val (cdr entry))
               (if val (map string->number (string-split val ",")) '()))]
            [else '()]))
-       (define y-min
-         (cond
-           [(assq 'y-min (url-query (request-uri req))) =>
-            (lambda (entry) (string->number (cdr entry)))]
-           [else #f]))
-       (render-table-image* E T xaxis yaxes logaxes #f #:y-min y-min)]))
+       (define (minmax param)
+         (cond [(assq param (url-query (request-uri req))) => (lambda (e) (string->number (cdr e)))]
+               [else #f]))
+       (define x-min (minmax 'x-min))
+       (define x-max (minmax 'x-max))
+       (define y-min (minmax 'y-min))
+       (define y-max (minmax 'y-max))
+       (render-table-image* E T xaxis yaxes logaxes #f
+                            #:x-min x-min #:x-max x-max
+                            #:y-min y-min #:y-max y-max)]))
 
   (define (render-table-image* E T xaxis yaxes logaxes is-thumbnail?
-                               #:y-min [y-min #f])
+                               #:x-min [x-min #f] #:x-max [x-max #f]
+                               #:y-min [y-min #f] #:y-max [y-max #f])
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
@@ -587,7 +592,8 @@
 		    p
 		    'png
 		    #:x-label x-label #:y-label y-label
-                    #:y-min y-min)))))
+                    #:x-min x-min #:x-max x-max
+                    #:y-min y-min #:y-max y-max)))))
 
   (serve/servlet logbook-dispatch
 		 ;; #:command-line? #f
