@@ -288,18 +288,32 @@
 		   "Latest entry")))
 	    ,(thumbnails-table Es #f))))
 
-  (define (default-plot-columns T)
+  (define (table-prefs T)
     (define E (logbook-table-entry T))
-    (define prefs (logbook-prefs L (logbook-entry-project E)
-				 #:entry_type (logbook-entry-type E)
-				 #:table_type (logbook-table-type T)
-				 #:table_name (logbook-table-name T)))
-    (hash-ref prefs 'default-plot-columns (lambda () '(0 1))))
+    (logbook-prefs L (logbook-entry-project E)
+                   #:entry_type (logbook-entry-type E)
+                   #:table_type (logbook-table-type T)
+                   #:table_name (logbook-table-name T)))
+
+  (define (set-table-pref! T key val)
+    (define E (logbook-table-entry T))
+    (set-logbook-pref! L (logbook-entry-project E)
+		       #:entry_type (logbook-entry-type E)
+		       #:table_type (logbook-table-type T)
+		       #:table_name (logbook-table-name T)
+		       key val))
+
+  (define (default-plot-columns T)
+    (hash-ref (table-prefs T) 'default-plot-columns (lambda () '(0 1))))
+
+  (define (default-log-columns T)
+    (hash-ref (table-prefs T) 'default-log-columns (lambda () '())))
 
   (define (format-table entry0 T)
     (match-define (<logbook-table> _ _ (<logbook-entry> _ _ project entry entry-type _)
 				   name type cols created-time) T)
     (match-define (list* xaxis yaxes) (default-plot-columns T))
+    (define logaxes (default-log-columns T))
     `(div ((class "table-block"))
 	  (form ((name ,(format "table-~a" name)))
 		,@(if cols
@@ -317,7 +331,7 @@
 			    (for/list [(c cols)] `(th ((class "rotate")) ,(value->xexpr c)))
 			    `((th "Datum"))))
 		  ,@(if cols
-			`((tr (th)
+			`((tr (th "x")
 			      ,@(for/list [(i (in-naturals)) (c cols)]
 				  `(th (input ((type "radio")
 					       ,@(if (= xaxis i)
@@ -328,8 +342,7 @@
 					       (value ,(number->string i))))))))
 			'())
 		  ,@(if cols
-			`((tr ((class "ruled"))
-			      (th)
+			`((tr (th "y")
 			      ,@(for/list [(i (in-naturals)) (c cols)]
 				  `(th (input ((type "checkbox")
 					       ,@(if (member i yaxes)
@@ -337,6 +350,18 @@
 						     '())
 					       (id ,(format "y-~a-~a" name i))
 					       (name ,(format "y-~a" name))
+					       (value ,(number->string i))))))))
+			'())
+		  ,@(if cols
+			`((tr ((class "ruled"))
+			      (th "log?")
+			      ,@(for/list [(i (in-naturals)) (c cols)]
+				  `(th (input ((type "checkbox")
+					       ,@(if (member i logaxes)
+						     `((checked "checked"))
+						     '())
+					       (id ,(format "log-~a-~a" name i))
+					       (name ,(format "log-~a" name))
 					       (value ,(number->string i))))))))
 			'())
 		  ,@(if cols
@@ -489,7 +514,8 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (match-define (list* xaxis yaxes) (default-plot-columns T))
-       (render-table-image* E T xaxis yaxes #t)]))
+       (define logaxes (default-log-columns T))
+       (render-table-image* E T xaxis yaxes logaxes #t)]))
 
   (define (default-render-table-image req project entry-type entry0 table)
     (match (lookup-entry project entry0 entry-type)
@@ -498,7 +524,8 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (match-define (list* xaxis yaxes) (default-plot-columns T))
-       (render-table-image* E T xaxis yaxes #f)]))
+       (define logaxes (default-log-columns T))
+       (render-table-image* E T xaxis yaxes logaxes #f)]))
 
   (define (render-table-image req project entry-type entry0 table xaxis yaxis0 yaxesN)
     (match (lookup-entry project entry0 entry-type)
@@ -507,21 +534,29 @@
        (define entry (logbook-entry-name E))
        (define T (logbook-table E table #:create? #f))
        (define yaxes (cons yaxis0 yaxesN))
-       (render-table-image* E T xaxis yaxes #f)]))
+       (define logaxes
+         (cond
+           [(assq 'logaxes (url-query (request-uri req))) =>
+            (lambda (entry)
+              (define val (cdr entry))
+              (if val (map string->number (string-split val ",")) '()))]
+           [else '()]))
+       (render-table-image* E T xaxis yaxes logaxes #f)]))
 
-  (define (render-table-image* E T xaxis yaxes is-thumbnail?)
+  (define (render-table-image* E T xaxis yaxes logaxes is-thumbnail?)
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
 	[ss
-	 (values (format "~a" ((@ xaxis) ss))
-		 (string-join (map (lambda (y) (value->string ((@ y) ss))) yaxes) " / "))]))
+         (define (colname path)
+           (if (member path logaxes)
+               (format "log(~a)" ((@ path) ss))
+               (format "~a" ((@ path) ss))))
+	 (values (colname xaxis)
+		 (string-join (map (lambda (y) (colname y)) yaxes) " / "))]))
 
-    (set-logbook-pref! L (logbook-entry-project E)
-		       #:entry_type (logbook-entry-type E)
-		       #:table_type (logbook-table-type T)
-		       #:table_name (logbook-table-name T)
-		       'default-plot-columns (cons xaxis yaxes))
+    (set-table-pref! T 'default-plot-columns (cons xaxis yaxes))
+    (set-table-pref! T 'default-log-columns logaxes)
 
     (response/output
      #:mime-type #"image/png"
@@ -529,8 +564,19 @@
        (parameterize ((plot-width  (if is-thumbnail? plot-thumbnail-width  plot-image-width))
 		      (plot-height (if is-thumbnail? plot-thumbnail-height plot-image-height))
 		      (plot-decorations? (not is-thumbnail?)))
+         (define x-log? (member xaxis logaxes))
 	 (plot-file (for/list [(yaxis yaxes)]
-		      (define ps (logbook-table->points T #:columns (list xaxis yaxis)))
+                      (define y-log? (member yaxis logaxes))
+                      (define (unrenderable-entry entry)
+                        (match-define (list xv yv) entry)
+                        (or (and x-log? (zero? xv))
+                            (and y-log? (zero? yv))))
+		      (define ps
+                        (for/list ((entry (logbook-table->points T #:columns (list xaxis yaxis)))
+                                   #:when (not (unrenderable-entry entry)))
+                          (match-define (list xv yv) entry)
+                          (list (if x-log? (log xv) xv)
+                                (if y-log? (log yv) yv))))
 		      (list (lines ps) (points ps)))
 		    p
 		    'png
