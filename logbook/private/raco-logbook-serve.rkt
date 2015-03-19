@@ -541,9 +541,15 @@
               (define val (cdr entry))
               (if val (map string->number (string-split val ",")) '()))]
            [else '()]))
-       (render-table-image* E T xaxis yaxes logaxes #f)]))
+       (define y-min
+         (cond
+           [(assq 'y-min (url-query (request-uri req))) =>
+            (lambda (entry) (string->number (cdr entry)))]
+           [else #f]))
+       (render-table-image* E T xaxis yaxes logaxes #f #:y-min y-min)]))
 
-  (define (render-table-image* E T xaxis yaxes logaxes is-thumbnail?)
+  (define (render-table-image* E T xaxis yaxes logaxes is-thumbnail?
+                               #:y-min [y-min #f])
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
@@ -580,7 +586,8 @@
 		      (list (lines ps) (points ps)))
 		    p
 		    'png
-		    #:x-label x-label #:y-label y-label)))))
+		    #:x-label x-label #:y-label y-label
+                    #:y-min y-min)))))
 
   (serve/servlet logbook-dispatch
 		 ;; #:command-line? #f
