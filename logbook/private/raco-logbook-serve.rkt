@@ -579,7 +579,8 @@
      (lambda (p)
        (parameterize ((plot-width  (if is-thumbnail? plot-thumbnail-width  plot-image-width))
 		      (plot-height (if is-thumbnail? plot-thumbnail-height plot-image-height))
-		      (plot-decorations? (not is-thumbnail?)))
+		      (plot-decorations? (not is-thumbnail?))
+                      (line-color "black"))
          (define x-log? (member xaxis logaxes))
 	 (plot-file (for/list [(yaxis yaxes)]
                       (define y-log? (member yaxis logaxes))
