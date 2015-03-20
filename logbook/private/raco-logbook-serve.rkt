@@ -527,6 +527,10 @@
        (define logaxes (default-log-columns T))
        (render-table-image* E T xaxis yaxes logaxes #f)]))
 
+  (define (query-param req name)
+    (cond [(assq name (url-query (request-uri req))) => cdr]
+          [else #f]))
+
   (define (render-table-image req project entry-type entry0 table xaxis yaxis0 yaxesN)
     (match (lookup-entry project entry0 entry-type)
       [#f (image-not-found project entry-type entry0 table)]
@@ -536,25 +540,26 @@
        (define yaxes (cons yaxis0 yaxesN))
        (define logaxes
          (cond
-           [(assq 'logaxes (url-query (request-uri req))) =>
-            (lambda (entry)
-              (define val (cdr entry))
-              (if val (map string->number (string-split val ",")) '()))]
+           [(query-param req 'logaxes) =>
+            (lambda (val) (map string->number (string-split val ",")))]
            [else '()]))
        (define (minmax param)
-         (cond [(assq param (url-query (request-uri req))) => (lambda (e) (string->number (cdr e)))]
+         (cond [(query-param req param) => string->number]
                [else #f]))
        (define x-min (minmax 'x-min))
        (define x-max (minmax 'x-max))
        (define y-min (minmax 'y-min))
        (define y-max (minmax 'y-max))
+       (define image-format (string->symbol (or (query-param req 'format) "png")))
        (render-table-image* E T xaxis yaxes logaxes #f
                             #:x-min x-min #:x-max x-max
-                            #:y-min y-min #:y-max y-max)]))
+                            #:y-min y-min #:y-max y-max
+                            #:format image-format)]))
 
   (define (render-table-image* E T xaxis yaxes logaxes is-thumbnail?
                                #:x-min [x-min #f] #:x-max [x-max #f]
-                               #:y-min [y-min #f] #:y-max [y-max #f])
+                               #:y-min [y-min #f] #:y-max [y-max #f]
+                               #:format [image-format 'png])
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
@@ -570,7 +575,7 @@
     (set-table-pref! T 'default-log-columns logaxes)
 
     (response/output
-     #:mime-type #"image/png"
+     #:mime-type (string->bytes/utf-8 (format "image/~a" image-format))
      (lambda (p)
        (parameterize ((plot-width  (if is-thumbnail? plot-thumbnail-width  plot-image-width))
 		      (plot-height (if is-thumbnail? plot-thumbnail-height plot-image-height))
@@ -590,7 +595,7 @@
                                 (if y-log? (log yv) yv))))
 		      (list (lines ps) (points ps)))
 		    p
-		    'png
+                    image-format
 		    #:x-label x-label #:y-label y-label
                     #:x-min x-min #:x-max x-max
                     #:y-min y-min #:y-max y-max)))))
