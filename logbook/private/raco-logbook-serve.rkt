@@ -577,13 +577,17 @@
     (set-table-pref! T 'default-plot-columns (cons xaxis yaxes))
     (set-table-pref! T 'default-log-columns logaxes)
 
+    (define box? (eq? decoration 'box))
+
     (response/output
      #:mime-type (string->bytes/utf-8 (format "image/~a" image-format))
      (lambda (p)
        (parameterize ((plot-width  (if is-thumbnail? plot-thumbnail-width  plot-image-width))
 		      (plot-height (if is-thumbnail? plot-thumbnail-height plot-image-height))
 		      (plot-decorations? (and (not is-thumbnail?)
-                                              (eq? decoration 'normal)))
+                                              (not (eq? decoration 'none))))
+                      (plot-x-ticks (if box? no-ticks (plot-x-ticks)))
+                      (plot-y-ticks (if box? no-ticks (plot-y-ticks)))
                       (line-color "black"))
          (define x-log? (member xaxis logaxes))
 	 (plot-file (for/list [(yaxis yaxes)]
@@ -601,7 +605,8 @@
 		      (list (lines ps) (points ps)))
 		    p
                     image-format
-		    #:x-label x-label #:y-label y-label
+		    #:x-label (if box? #f x-label)
+                    #:y-label (if box? #f y-label)
                     #:x-min x-min #:x-max x-max
                     #:y-min y-min #:y-max y-max)))))
 
