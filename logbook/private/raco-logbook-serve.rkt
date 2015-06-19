@@ -550,16 +550,19 @@
        (define x-max (minmax 'x-max))
        (define y-min (minmax 'y-min))
        (define y-max (minmax 'y-max))
+       (define decoration (string->symbol (or (query-param req 'decoration) "normal")))
        (define image-format (string->symbol (or (query-param req 'format) "png")))
        (render-table-image* E T xaxis yaxes logaxes #f
                             #:x-min x-min #:x-max x-max
                             #:y-min y-min #:y-max y-max
-                            #:format image-format)]))
+                            #:format image-format
+                            #:decoration decoration)]))
 
   (define (render-table-image* E T xaxis yaxes logaxes is-thumbnail?
                                #:x-min [x-min #f] #:x-max [x-max #f]
                                #:y-min [y-min #f] #:y-max [y-max #f]
-                               #:format [image-format 'png])
+                               #:format [image-format 'png]
+                               #:decoration [decoration 'normal])
     (define-values (x-label y-label)
       (match (logbook-table-column-spec T)
 	[#f (values (plot-x-label) (plot-y-label))]
@@ -579,7 +582,8 @@
      (lambda (p)
        (parameterize ((plot-width  (if is-thumbnail? plot-thumbnail-width  plot-image-width))
 		      (plot-height (if is-thumbnail? plot-thumbnail-height plot-image-height))
-		      (plot-decorations? (not is-thumbnail?))
+		      (plot-decorations? (and (not is-thumbnail?)
+                                              (eq? decoration 'normal)))
                       (line-color "black"))
          (define x-log? (member xaxis logaxes))
 	 (plot-file (for/list [(yaxis yaxes)]
