@@ -1,6 +1,5 @@
 #lang racket/base
 
-(require (only-in unstable/list group-by))
 (require racket/match)
 (require racket/date)
 (require racket/runtime-path)
