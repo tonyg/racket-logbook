@@ -8,7 +8,7 @@
 (require racket/string)
 (require racket/port)
 
-(require (planet neil/csv))
+(require csv-reading)
 
 (require "../main.rkt")
 (require "../export.rkt")
