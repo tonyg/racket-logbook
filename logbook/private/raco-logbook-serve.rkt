@@ -364,6 +364,15 @@
 					       (value ,(number->string i))))))))
 			'())
 		  ,@(if cols
+			`((tr ((class "ruled"))
+			      (th "zero-base?")
+                              (th ((colspan ,(format "~a" (length cols))))
+                                  (input ((type "checkbox")
+                                          (checked "checked")
+                                          (id ,(format "zero-base-~a" name))
+                                          (name ,(format "zero-base-~a" name)))))))
+			'())
+		  ,@(if cols
 			`((script ,(format "install_callbacks('~a','~a','~a','~a',~a);\n"
 					   project
 					   entry-type

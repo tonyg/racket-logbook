@@ -6,6 +6,9 @@ function install_callbacks(projectname, entrytype, entryname, tablename, control
     var logs = [];
     var img = document.getElementById('plot-' + tablename);
 
+    var zerobasecontrol = 'zero-base-' + tablename;
+    var zerobase_element = f[zerobasecontrol];
+
     function refresh_plot() {
 	var xaxis = 0;
 	var yaxes = [];
@@ -21,12 +24,15 @@ function install_callbacks(projectname, entrytype, entryname, tablename, control
 	    img.src =
 		'/log/' + projectname + '/' + entrytype + '/' + entryname + '/' + tablename +
 		'/plot/' + xaxis + '/' + yaxes.join('/') + '?' + (+(new Date())) +
-		'&logaxes=' + logaxesstr;
+		'&logaxes=' + logaxesstr +
+                (zerobase_element.checked ? '&y-min=0' : '');
 	} else {
 	    img.className = 'display-none';
 	    img.src = '';
 	}
     }
+
+    zerobase_element.onclick = refresh_plot;
 
     for (var i = 0; i < controlcount; i++) {
 	(function (i) {
